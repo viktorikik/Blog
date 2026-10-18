@@ -6,42 +6,42 @@ const PLATFORMS = {
   max:       { name: 'MAX',       color: '#292724', maxLength: 4096 },
   zen:       { name: 'Дзен',      color: '#292724', maxLength: 10000 },
 };
+const POST_STATUSES = {
+  draft:     { label: 'Черновик',     color: '#687B59' },
+  review:    { label: 'На вычитке',   color: '#F27691' },
+  ready:     { label: 'Готово',       color: '#DCEB32' },
+  published: { label: 'Опубликовано', color: '#292724' },
+};
 const IDEA_STATUSES = {
   new:      { label: 'Новая',     color: '#687B59' },
   approved: { label: 'Одобрена',  color: '#DCEB32' },
   in_work:  { label: 'В работе',  color: '#F27691' },
   rejected: { label: 'Отклонена', color: '#d8cdbd' },
 };
-const DRAFT_STATUSES = {
-  draft:  { label: 'Черновик',   color: '#687B59' },
-  review: { label: 'На вычитке', color: '#F27691' },
-  ready:  { label: 'Готово',     color: '#DCEB32' },
-};
-const PLAN_STATUSES = {
-  planned:   { label: 'Запланировано', color: '#687B59' },
-  published: { label: 'Опубликовано',  color: '#DCEB32' },
-};
 const SECTION_TITLES = {
-  plan: 'Контент-план', drafts: 'Черновики', ideas: 'Идеи',
+  plan: 'Контент-план', posts: 'Все посты', ideas: 'Идеи',
   mission: 'Миссия', settings: 'Настройки',
 };
 
 // ============ DB ============
 const DB_NAME = 'eshe-odna-galochka';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
-      if (!db.objectStoreNames.contains('ideas')) db.createObjectStore('ideas', { keyPath: 'id' });
-      if (!db.objectStoreNames.contains('drafts')) db.createObjectStore('drafts', { keyPath: 'id' });
-      if (!db.objectStoreNames.contains('draft_versions')) {
-        const s = db.createObjectStore('draft_versions', { keyPath: 'id' });
-        s.createIndex('draftId', 'draftId');
+      // v1 stores we no longer need
+      for (const old of ['drafts', 'draft_versions', 'content_plan']) {
+        if (db.objectStoreNames.contains(old)) db.deleteObjectStore(old);
       }
-      if (!db.objectStoreNames.contains('content_plan')) db.createObjectStore('content_plan', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('ideas')) db.createObjectStore('ideas', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('posts')) db.createObjectStore('posts', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('post_versions')) {
+        const s = db.createObjectStore('post_versions', { keyPath: 'id' });
+        s.createIndex('postId', 'postId');
+      }
       if (!db.objectStoreNames.contains('mission')) db.createObjectStore('mission', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', { keyPath: 'id' });
     };
@@ -54,9 +54,9 @@ function dbGet(db, store, key) { return new Promise((res, rej) => { const r = db
 function dbPut(db, store, value) { return new Promise((res, rej) => { const r = dbStore(db, store, 'readwrite').put(value); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
 function dbDelete(db, store, key) { return new Promise((res, rej) => { const r = dbStore(db, store, 'readwrite').delete(key); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }); }
 function dbGetAll(db, store) { return new Promise((res, rej) => { const r = dbStore(db, store).getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
-function dbGetVersions(db, draftId) {
+function dbGetVersions(db, postId) {
   return new Promise((res, rej) => {
-    const r = dbStore(db, 'draft_versions').index('draftId').getAll(draftId);
+    const r = dbStore(db, 'post_versions').index('postId').getAll(postId);
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
   });
@@ -67,6 +67,7 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 function fmtDate(ts) { return new Date(ts).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' }); }
 function fmtDateTime(ts) { return new Date(ts).toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); }
 function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function today() { return new Date().toISOString().slice(0, 10); }
 function toast(msg) {
   const t = document.createElement('div');
   t.className = 'toast';
@@ -132,7 +133,7 @@ function switchTab(tab) {
   document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === `section-${tab}`));
   document.getElementById('section-title').textContent = SECTION_TITLES[tab];
   if (tab === 'plan') renderPlan();
-  if (tab === 'drafts') renderDrafts();
+  if (tab === 'posts') renderPosts();
   if (tab === 'ideas') renderIdeas();
   if (tab === 'settings') renderSettings();
 }
@@ -143,26 +144,20 @@ async function handleGlobalClick(e) {
   if (!btn) return;
   const { action, id } = btn.dataset;
   switch (action) {
-    case 'new-plan': openPlanEditor(null); break;
-    case 'edit-plan': openPlanEditor(id); break;
-    case 'delete-plan':
-      if (confirm('Удалить запись из плана?')) { await dbDelete(db, 'content_plan', id); markChange(); renderPlan(); }
-      break;
-    case 'open-linked-draft': openDraftEditor(id); break;
-    case 'new-draft': openDraftEditor('new'); break;
-    case 'edit-draft': openDraftEditor(id); break;
-    case 'delete-draft':
-      if (confirm('Удалить черновик и его историю?')) {
-        const versions = await dbGetVersions(db, id);
-        for (const v of versions) await dbDelete(db, 'draft_versions', v.id);
-        await dbDelete(db, 'drafts', id);
-        markChange(); renderDrafts();
+    case 'new-plan': openPostEditor('new', { prefillDate: true, openTab: 'meta' }); break;
+    case 'new-post': openPostEditor('new', { openTab: 'text' }); break;
+    case 'edit-post': openPostEditor(id); break;
+    case 'delete-post':
+      if (confirm('Удалить пост и его историю?')) {
+        await deletePost(id);
+        await markChange();
+        switchTab(currentTab);
       }
       break;
     case 'new-idea': openIdeaEditor(null); break;
     case 'edit-idea': openIdeaEditor(id); break;
     case 'delete-idea':
-      if (confirm('Удалить идею?')) { await dbDelete(db, 'ideas', id); markChange(); renderIdeas(); }
+      if (confirm('Удалить идею?')) { await dbDelete(db, 'ideas', id); await markChange(); renderIdeas(); }
       break;
     case 'save-mission': saveMission(); break;
     case 'backup-now': sendBackup(); break;
@@ -170,144 +165,122 @@ async function handleGlobalClick(e) {
   }
 }
 
-// ============ Plan ============
-async function renderPlan() {
-  const plans = await dbGetAll(db, 'content_plan');
-  plans.sort((a, b) => (a.publishDate || '9999').localeCompare(b.publishDate || '9999'));
-  const list = document.getElementById('plan-list');
-  if (!plans.length) { list.innerHTML = '<p class="empty">Пока пусто. Добавьте первый пост.</p>'; return; }
-  list.innerHTML = plans.map(p => {
-    const pl = PLATFORMS[p.channel] || { name: p.channel, color: '#292724' };
-    const st = PLAN_STATUSES[p.status] || PLAN_STATUSES.planned;
-    return `
-      <div class="card">
-        <div class="card-row">
-          <span class="channel-pill" style="background:${pl.color}">${escapeHtml(pl.name)}</span>
-          <span class="status-pill" style="background:${st.color}">${st.label}</span>
-        </div>
-        <h3 class="card-title">${escapeHtml(p.title || '—')}</h3>
-        <div class="card-meta">${p.publishDate ? fmtDate(new Date(p.publishDate).getTime()) : '—'}</div>
-        <div class="card-actions">
-          ${p.draftId ? `<button data-action="open-linked-draft" data-id="${p.draftId}" title="Черновик">📝</button>` : ''}
-          <button data-action="edit-plan" data-id="${p.id}" title="Изменить">✎</button>
-          <button data-action="delete-plan" data-id="${p.id}" title="Удалить">🗑</button>
-        </div>
-      </div>`;
+// ============ Post card ============
+function buildPostCard(post, mode) {
+  // mode: 'plan' | 'posts'
+  const status = POST_STATUSES[post.status] || POST_STATUSES.draft;
+  const channelPills = (post.channels || []).map(ch => {
+    const p = PLATFORMS[ch];
+    return p ? `<span class="channel-pill" style="background:${p.color}">${p.name}</span>` : '';
   }).join('');
+  const tagsHtml = (post.tags || []).length
+    ? `<div class="tags">${post.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>`
+    : '';
+  const seriesHtml = post.seriesName
+    ? `<div class="card-series">📚 ${escapeHtml(post.seriesName)}${post.seriesPart ? ` · ч. ${post.seriesPart}${post.seriesTotal ? `/${post.seriesTotal}` : ''}` : ''}</div>`
+    : '';
+  const relatedCount = (post.relatedPostIds || []).length;
+  const relatedHtml = relatedCount ? `<span class="card-related">🔗 ${relatedCount} ${relatedCount === 1 ? 'связь' : 'связей'}</span>` : '';
+  const snippet = (post.body || '').replace(/[#*_`\[\]]/g, '').slice(0, 120);
+
+  let metaLine = '';
+  if (mode === 'plan' && post.publishDate) {
+    metaLine = `<div class="card-date">📅 ${fmtDate(new Date(post.publishDate).getTime())}</div>`;
+  } else if (mode === 'posts') {
+    metaLine = `<div class="card-meta">Изменён ${fmtDateTime(post.updatedAt)}${post.publishDate ? ` · 📅 ${fmtDate(new Date(post.publishDate).getTime())}` : ''}</div>`;
+  }
+
+  return `
+    <div class="card">
+      <div class="card-row">
+        ${channelPills}
+        <span class="status-pill" style="background:${status.color}">${status.label}</span>
+      </div>
+      <h3 class="card-title">${escapeHtml(post.title || 'Без названия')}</h3>
+      ${snippet ? `<p class="card-body">${escapeHtml(snippet)}${(post.body || '').length > 120 ? '…' : ''}</p>` : ''}
+      ${seriesHtml}
+      ${tagsHtml}
+      ${metaLine}
+      ${relatedHtml ? `<div style="margin-top:6px">${relatedHtml}</div>` : ''}
+      <div class="card-actions">
+        <button data-action="edit-post" data-id="${post.id}" title="Открыть">✎</button>
+        <button data-action="delete-post" data-id="${post.id}" title="Удалить">🗑</button>
+      </div>
+    </div>`;
 }
 
-async function openPlanEditor(id) {
-  let plan;
-  if (!id) plan = { id: uid(), title: '', publishDate: '', channel: 'telegram', status: 'planned', draftId: null };
-  else plan = await dbGet(db, 'content_plan', id);
-  const drafts = await dbGetAll(db, 'drafts');
-  drafts.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+// ============ Plan view ============
+async function renderPlan() {
+  const all = await dbGetAll(db, 'posts');
+  const plans = all.filter(p => p.publishDate);
+  const t = today();
+  plans.sort((a, b) => {
+    const aPast = a.publishDate < t;
+    const bPast = b.publishDate < t;
+    if (aPast !== bPast) return aPast ? 1 : -1;
+    if (aPast) return b.publishDate.localeCompare(a.publishDate);
+    return a.publishDate.localeCompare(b.publishDate);
+  });
+  const el = document.getElementById('plan-list');
+  if (!plans.length) { el.innerHTML = '<p class="empty">План пуст. Запланируйте первый пост или добавьте дату существующему.</p>'; return; }
+  el.innerHTML = plans.map(p => buildPostCard(p, 'plan')).join('');
+}
+
+// ============ Posts view ============
+async function renderPosts() {
+  const posts = await dbGetAll(db, 'posts');
+  posts.sort((a, b) => b.updatedAt - a.updatedAt);
+  const el = document.getElementById('posts-list');
+  if (!posts.length) { el.innerHTML = '<p class="empty">Постов пока нет. Начните с нового.</p>'; return; }
+  el.innerHTML = posts.map(p => buildPostCard(p, 'posts')).join('');
+}
+
+// ============ Post editor ============
+async function openPostEditor(id, opts = {}) {
+  const isNew = id === 'new';
+  let post;
+  if (isNew) {
+    post = {
+      id: uid(), title: '', body: '', status: 'draft',
+      publishDate: opts.prefillDate ? today() : '',
+      channels: [], tags: [], seriesName: '', seriesPart: null, seriesTotal: null,
+      relatedPostIds: [], ideaId: null,
+      createdAt: Date.now(), updatedAt: Date.now(),
+    };
+  } else {
+    post = await dbGet(db, 'posts', id);
+  }
+  if (!post) return toast('Пост не найден');
+
+  const ideas = await dbGetAll(db, 'ideas');
+  const allPosts = await dbGetAll(db, 'posts');
+  const otherPosts = allPosts.filter(p => p.id !== post.id);
+  const titleById = {};
+  allPosts.forEach(p => { titleById[p.id] = p.title || 'Без названия'; });
+
+  let selectedRelatedIds = [...(post.relatedPostIds || [])];
+  let selectedChannels = [...(post.channels || [])];
+  let currentPlatform = 'telegram';
 
   const root = document.getElementById('modal-root');
   root.innerHTML = `
     <div class="modal">
       <header class="modal-header">
         <button data-close>←</button>
-        <h2>${id ? 'Пост в плане' : 'Новый пост'}</h2>
-        <button class="btn-primary" id="save-plan">Сохранить</button>
-      </header>
-      <div class="modal-body">
-        <label class="label">Название</label>
-        <input id="plan-title" type="text" value="${escapeHtml(plan.title)}" placeholder="О чём пост?">
-        <label class="label">Дата публикации</label>
-        <input id="plan-date" type="date" value="${plan.publishDate || ''}">
-        <label class="label">Канал</label>
-        <select id="plan-channel">
-          ${Object.entries(PLATFORMS).map(([k, v]) => `<option value="${k}" ${plan.channel === k ? 'selected' : ''}>${v.name}</option>`).join('')}
-        </select>
-        <label class="label">Черновик</label>
-        <select id="plan-draft">
-          <option value="">— без черновика —</option>
-          ${drafts.map(d => `<option value="${d.id}" ${plan.draftId === d.id ? 'selected' : ''}>${escapeHtml(d.title || 'Без названия')}</option>`).join('')}
-        </select>
-        <label class="label">Статус</label>
-        <select id="plan-status">
-          ${Object.entries(PLAN_STATUSES).map(([k, v]) => `<option value="${k}" ${plan.status === k ? 'selected' : ''}>${v.label}</option>`).join('')}
-        </select>
-      </div>
-    </div>`;
-
-  root.querySelector('[data-close]').onclick = closeModal;
-  root.querySelector('#save-plan').onclick = async () => {
-    plan.title = root.querySelector('#plan-title').value.trim();
-    plan.publishDate = root.querySelector('#plan-date').value;
-    plan.channel = root.querySelector('#plan-channel').value;
-    plan.draftId = root.querySelector('#plan-draft').value || null;
-    plan.status = root.querySelector('#plan-status').value;
-    if (!plan.title) return toast('Название обязательно');
-    await dbPut(db, 'content_plan', plan);
-    await markChange();
-    closeModal();
-    renderPlan();
-    toast('Сохранено ✓');
-  };
-}
-
-// ============ Drafts ============
-async function renderDrafts() {
-  const drafts = await dbGetAll(db, 'drafts');
-  drafts.sort((a, b) => b.updatedAt - a.updatedAt);
-  const list = document.getElementById('drafts-list');
-  if (!drafts.length) { list.innerHTML = '<p class="empty">Пока пусто. Создайте первый черновик.</p>'; return; }
-  list.innerHTML = drafts.map(d => {
-    const st = DRAFT_STATUSES[d.status] || DRAFT_STATUSES.draft;
-    const snippet = (d.body || '').slice(0, 120);
-    return `
-      <div class="card">
-        <div class="card-row">
-          <span class="status-pill" style="background:${st.color}">${st.label}</span>
-        </div>
-        <h3 class="card-title">${escapeHtml(d.title || 'Без названия')}</h3>
-        <p class="card-body">${escapeHtml(snippet)}${(d.body || '').length > 120 ? '…' : ''}</p>
-        <div class="card-meta">${fmtDateTime(d.updatedAt)}</div>
-        <div class="card-actions">
-          <button data-action="edit-draft" data-id="${d.id}" title="Открыть">✎</button>
-          <button data-action="delete-draft" data-id="${d.id}" title="Удалить">🗑</button>
-        </div>
-      </div>`;
-  }).join('');
-}
-
-async function openDraftEditor(id) {
-  const isNew = id === 'new';
-  let draft;
-  if (isNew) draft = { id: uid(), title: '', body: '', status: 'draft', createdAt: Date.now(), updatedAt: Date.now() };
-  else draft = await dbGet(db, 'drafts', id);
-  if (!draft) return toast('Черновик не найден');
-
-  const ideas = await dbGetAll(db, 'ideas');
-
-  const root = document.getElementById('modal-root');
-  root.innerHTML = `
-    <div class="modal fullscreen">
-      <header class="modal-header">
-        <button data-close>←</button>
-        <h2>${isNew ? 'Новый черновик' : 'Черновик'}</h2>
+        <h2>${isNew ? 'Новый пост' : 'Пост'}</h2>
         <div style="display:flex;gap:4px">
-          <button id="draft-history" title="История версий">🕐</button>
-          <button class="btn-primary" id="draft-save">Сохранить</button>
+          ${isNew ? '' : '<button id="post-history" title="История версий">🕐</button>'}
+          <button class="btn-primary" id="post-save">Сохранить</button>
         </div>
       </header>
       <div class="modal-tabs">
-        <button class="modal-tab active" data-mode="editor">Редактор</button>
+        <button class="modal-tab active" data-mode="text">Текст</button>
+        <button class="modal-tab" data-mode="meta">Мета</button>
         <button class="modal-tab" data-mode="preview">Предпросмотр</button>
       </div>
-      <div class="editor-view" data-view="editor">
-        <input id="draft-title" class="title-input" type="text" placeholder="Заголовок черновика" value="${escapeHtml(draft.title)}">
-        <div class="meta-row">
-          <select id="draft-status">
-            ${Object.entries(DRAFT_STATUSES).map(([k, v]) => `<option value="${k}" ${draft.status === k ? 'selected' : ''}>${v.label}</option>`).join('')}
-          </select>
-          <select id="draft-idea">
-            <option value="">— без идеи —</option>
-            ${ideas.map(i => `<option value="${i.id}" ${draft.ideaId === i.id ? 'selected' : ''}>${escapeHtml(i.title)}</option>`).join('')}
-          </select>
-        </div>
+
+      <div class="editor-view" data-view="text">
+        <input id="post-title" class="title-input" type="text" placeholder="Заголовок поста" value="${escapeHtml(post.title)}">
         <div class="format-bar">
           <button data-md="bold" title="Жирный"><b>B</b></button>
           <button data-md="italic" title="Курсив"><i>I</i></button>
@@ -315,8 +288,45 @@ async function openDraftEditor(id) {
           <button data-md="list" title="Список">≡</button>
           <button data-md="h2" title="Подзаголовок">H2</button>
         </div>
-        <textarea id="draft-body" class="body-textarea" placeholder="Текст поста в Markdown. Хэштеги — в конце через #.">${escapeHtml(draft.body)}</textarea>
+        <textarea id="post-body" class="body-textarea" placeholder="Текст поста в Markdown. Хэштеги — в конце через #.">${escapeHtml(post.body)}</textarea>
       </div>
+
+      <div class="editor-view hidden" data-view="meta">
+        <label class="label">Статус</label>
+        <select id="post-status">
+          ${Object.entries(POST_STATUSES).map(([k, v]) => `<option value="${k}" ${post.status === k ? 'selected' : ''}>${v.label}</option>`).join('')}
+        </select>
+
+        <label class="label">Дата публикации (для плана)</label>
+        <input id="post-date" type="date" value="${post.publishDate || ''}">
+
+        <label class="label">Каналы</label>
+        <div class="channels-picker">
+          ${Object.entries(PLATFORMS).map(([k, v]) => `<button class="channel-toggle" data-channel="${k}" style="--toggle-color:${v.color}">${v.name}</button>`).join('')}
+        </div>
+
+        <label class="label">Идея</label>
+        <select id="post-idea">
+          <option value="">— без идеи —</option>
+          ${ideas.map(i => `<option value="${i.id}" ${post.ideaId === i.id ? 'selected' : ''}>${escapeHtml(i.title)}</option>`).join('')}
+        </select>
+
+        <label class="label">Теги (через запятую)</label>
+        <input id="post-tags" type="text" value="${escapeHtml((post.tags || []).join(', '))}" placeholder="лайфстайл, техника, личное">
+
+        <label class="label">Серия (направленная связь)</label>
+        <div class="series-row">
+          <input id="series-name" type="text" placeholder="Название серии" value="${escapeHtml(post.seriesName || '')}">
+          <input id="series-part" type="number" min="1" placeholder="Часть" value="${post.seriesPart || ''}">
+          <input id="series-total" type="number" min="1" placeholder="Всего" value="${post.seriesTotal || ''}">
+        </div>
+
+        <label class="label">Связанные посты (двусторонние)</label>
+        <div class="related-chips" id="related-chips"></div>
+        <input id="related-search" type="text" placeholder="Найти пост по названию…">
+        <div class="related-suggestions" id="related-suggestions"></div>
+      </div>
+
       <div class="preview-view hidden" data-view="preview">
         <div class="platform-tabs">
           ${Object.entries(PLATFORMS).map(([k, v]) => `<button class="platform-tab" data-platform="${k}" style="--tab-color:${v.color}">${v.name}</button>`).join('')}
@@ -325,17 +335,10 @@ async function openDraftEditor(id) {
       </div>
     </div>`;
 
-  let currentPlatform = 'telegram';
-  const bodyEl = root.querySelector('#draft-body');
-  const titleEl = root.querySelector('#draft-title');
+  const titleEl = root.querySelector('#post-title');
+  const bodyEl = root.querySelector('#post-body');
 
-  root.querySelector('[data-close]').onclick = () => {
-    const changed = isNew ? (titleEl.value || bodyEl.value) : (draft.title !== titleEl.value || draft.body !== bodyEl.value);
-    if (changed && !confirm('Есть несохранённые изменения. Выйти?')) return;
-    closeModal();
-    switchTab('drafts');
-  };
-
+  // Tabs
   root.querySelectorAll('.modal-tab').forEach(t => {
     t.onclick = () => {
       root.querySelectorAll('.modal-tab').forEach(x => x.classList.remove('active'));
@@ -345,6 +348,7 @@ async function openDraftEditor(id) {
     };
   });
 
+  // Format bar
   root.querySelectorAll('.format-bar button').forEach(b => {
     b.onclick = () => {
       const md = b.dataset.md;
@@ -356,37 +360,198 @@ async function openDraftEditor(id) {
     };
   });
 
-  function renderPreview() {
-    root.querySelectorAll('.platform-tab').forEach(t => t.classList.toggle('active', t.dataset.platform === currentPlatform));
-    root.querySelector('#platform-preview').innerHTML = buildPreview(currentPlatform, titleEl.value, bodyEl.value);
+  // Channels picker
+  function renderChannels() {
+    root.querySelectorAll('.channel-toggle').forEach(btn => {
+      btn.classList.toggle('active', selectedChannels.includes(btn.dataset.channel));
+    });
   }
+  root.querySelectorAll('.channel-toggle').forEach(btn => {
+    btn.onclick = () => {
+      const ch = btn.dataset.channel;
+      if (selectedChannels.includes(ch)) {
+        selectedChannels = selectedChannels.filter(x => x !== ch);
+      } else {
+        selectedChannels.push(ch);
+      }
+      renderChannels();
+    };
+  });
+  renderChannels();
 
+  // Related picker
+  function renderChips() {
+    const el = root.querySelector('#related-chips');
+    el.innerHTML = selectedRelatedIds.map(id => {
+      const title = titleById[id] || 'Без названия';
+      return `<span class="related-chip">${escapeHtml(title)}<button data-remove="${id}">×</button></span>`;
+    }).join('');
+    el.querySelectorAll('[data-remove]').forEach(b => {
+      b.onclick = () => {
+        selectedRelatedIds = selectedRelatedIds.filter(x => x !== b.dataset.remove);
+        renderChips();
+      };
+    });
+  }
+  function renderSuggestions(query) {
+    const el = root.querySelector('#related-suggestions');
+    if (!query || !query.trim()) { el.innerHTML = ''; return; }
+    const q = query.toLowerCase();
+    const matches = otherPosts
+      .filter(p => !selectedRelatedIds.includes(p.id))
+      .filter(p => (p.title || '').toLowerCase().includes(q))
+      .slice(0, 10);
+    if (!matches.length) {
+      el.innerHTML = '<div class="related-suggestion" style="color:var(--muted);cursor:default">Ничего не найдено</div>';
+      return;
+    }
+    el.innerHTML = matches.map(p => `<div class="related-suggestion" data-add="${p.id}">${escapeHtml(p.title || 'Без названия')}</div>`).join('');
+    el.querySelectorAll('[data-add]').forEach(s => {
+      s.onclick = () => {
+        const rid = s.dataset.add;
+        if (!selectedRelatedIds.includes(rid)) {
+          selectedRelatedIds.push(rid);
+          renderChips();
+          root.querySelector('#related-search').value = '';
+          renderSuggestions('');
+        }
+      };
+    });
+  }
+  root.querySelector('#related-search').oninput = (e) => renderSuggestions(e.target.value);
+  renderChips();
+
+  // Preview
+  async function renderPreview() {
+    root.querySelectorAll('.platform-tab').forEach(t => t.classList.toggle('active', t.dataset.platform === currentPlatform));
+    const relatedTitles = [];
+    for (const rid of selectedRelatedIds) {
+      const p = await dbGet(db, 'posts', rid);
+      if (p) relatedTitles.push(p.title || 'Без названия');
+    }
+    const series = {
+      name: root.querySelector('#series-name').value.trim(),
+      part: parseInt(root.querySelector('#series-part').value) || null,
+      total: parseInt(root.querySelector('#series-total').value) || null,
+    };
+    root.querySelector('#platform-preview').innerHTML =
+      buildPreview(currentPlatform, titleEl.value, bodyEl.value, series, relatedTitles);
+  }
   root.querySelectorAll('.platform-tab').forEach(t => {
     t.onclick = () => { currentPlatform = t.dataset.platform; renderPreview(); };
   });
 
-  root.querySelector('#draft-save').onclick = async () => {
-    draft.title = titleEl.value.trim();
-    draft.body = bodyEl.value;
-    draft.status = root.querySelector('#draft-status').value;
-    draft.ideaId = root.querySelector('#draft-idea').value || null;
-    draft.updatedAt = Date.now();
-    await dbPut(db, 'draft_versions', {
-      id: uid(), draftId: draft.id,
-      title: draft.title, body: draft.body,
-      savedAt: Date.now(), comment: isNew ? 'Создан' : 'Изменён',
-    });
-    await dbPut(db, 'drafts', draft);
-    await markChange();
-    toast('Сохранено ✓');
-    if (isNew) { closeModal(); switchTab('drafts'); }
+  // Close
+  root.querySelector('[data-close]').onclick = () => {
+    const changed = isNew
+      ? (titleEl.value || bodyEl.value)
+      : (post.title !== titleEl.value || post.body !== bodyEl.value);
+    if (changed && !confirm('Есть несохранённые изменения. Выйти?')) return;
+    closeModal();
+    switchTab(currentTab);
   };
 
-  root.querySelector('#draft-history').onclick = () => showHistory(draft.id);
-  renderPreview();
+  // History
+  if (!isNew) {
+    root.querySelector('#post-history').onclick = () => showHistory(post.id);
+  }
+
+  // Save
+  root.querySelector('#post-save').onclick = async () => {
+    post.title = titleEl.value.trim();
+    post.body = bodyEl.value;
+    post.status = root.querySelector('#post-status').value;
+    post.publishDate = root.querySelector('#post-date').value || '';
+    post.channels = [...selectedChannels];
+    post.ideaId = root.querySelector('#post-idea').value || null;
+    post.tags = root.querySelector('#post-tags').value.split(',').map(t => t.trim()).filter(Boolean);
+    post.seriesName = root.querySelector('#series-name').value.trim();
+    if (post.seriesName) {
+      post.seriesPart = parseInt(root.querySelector('#series-part').value) || null;
+      post.seriesTotal = parseInt(root.querySelector('#series-total').value) || null;
+    } else {
+      post.seriesPart = null;
+      post.seriesTotal = null;
+    }
+    post.updatedAt = Date.now();
+
+    // Version snapshot
+    await dbPut(db, 'post_versions', {
+      id: uid(), postId: post.id,
+      title: post.title, body: post.body,
+      status: post.status, channels: [...post.channels], tags: [...post.tags],
+      seriesName: post.seriesName, seriesPart: post.seriesPart, seriesTotal: post.seriesTotal,
+      publishDate: post.publishDate,
+      savedAt: Date.now(),
+      comment: isNew ? 'Создан' : 'Изменён',
+    });
+
+    // Bidirectional related links
+    await updateRelatedLinks(post.id, selectedRelatedIds);
+    post.relatedPostIds = [...selectedRelatedIds];
+
+    // Save post
+    await dbPut(db, 'posts', post);
+    await markChange();
+    toast('Сохранено ✓');
+
+    if (isNew) { closeModal(); switchTab('posts'); }
+  };
+
+  // Open requested tab
+  const initialTab = opts.openTab || 'text';
+  if (initialTab === 'preview') {
+    root.querySelector('[data-mode="preview"]').click();
+  } else if (initialTab === 'meta') {
+    root.querySelector('[data-mode="meta"]').click();
+  }
 }
 
-function buildPreview(platform, title, body) {
+// ============ Related links (bidirectional) ============
+async function updateRelatedLinks(postId, newIds) {
+  const post = await dbGet(db, 'posts', postId);
+  if (!post) return;
+  const oldIds = post.relatedPostIds || [];
+  const added = newIds.filter(id => !oldIds.includes(id));
+  const removed = oldIds.filter(id => !newIds.includes(id));
+
+  for (const otherId of added) {
+    const other = await dbGet(db, 'posts', otherId);
+    if (other) {
+      other.relatedPostIds = [...(other.relatedPostIds || []), postId];
+      other.updatedAt = Date.now();
+      await dbPut(db, 'posts', other);
+    }
+  }
+  for (const otherId of removed) {
+    const other = await dbGet(db, 'posts', otherId);
+    if (other) {
+      other.relatedPostIds = (other.relatedPostIds || []).filter(id => id !== postId);
+      other.updatedAt = Date.now();
+      await dbPut(db, 'posts', other);
+    }
+  }
+}
+
+async function deletePost(id) {
+  // Clean up reverse links
+  const others = await dbGetAll(db, 'posts');
+  for (const p of others) {
+    if (p.id !== id && (p.relatedPostIds || []).includes(id)) {
+      p.relatedPostIds = p.relatedPostIds.filter(x => x !== id);
+      p.updatedAt = Date.now();
+      await dbPut(db, 'posts', p);
+    }
+  }
+  // Delete versions
+  const versions = await dbGetVersions(db, id);
+  for (const v of versions) await dbDelete(db, 'post_versions', v.id);
+  // Delete post
+  await dbDelete(db, 'posts', id);
+}
+
+// ============ Preview builder ============
+function buildPreview(platform, title, body, series, relatedTitles) {
   const p = PLATFORMS[platform];
   const len = body.length;
   const over = len > p.maxLength;
@@ -394,6 +559,15 @@ function buildPreview(platform, title, body) {
   const overHash = p.hashtagLimit && hashtags > p.hashtagLimit;
   const counter = `<div class="counter ${over ? 'over' : ''}">${len} / ${p.maxLength}${overHash ? ` · хэштегов ${hashtags}/${p.hashtagLimit}` : ''}</div>`;
   const md = renderMarkdown(body);
+  const seriesLine = series.name
+    ? `<div class="pf-line">📚 Серия: ${escapeHtml(series.name)}${series.part ? ` · ч. ${series.part}${series.total ? `/${series.total}` : ''}` : ''}</div>`
+    : '';
+  const relatedLine = relatedTitles.length
+    ? `<div class="pf-line">🔗 Связанные посты: ${relatedTitles.map(t => escapeHtml(t)).join(', ')}</div>`
+    : '';
+  const footer = (seriesLine || relatedLine)
+    ? `<div class="preview-footer">${seriesLine}${relatedLine}</div>`
+    : '';
 
   if (platform === 'instagram') return `
     <div class="ig-preview">
@@ -406,15 +580,17 @@ function buildPreview(platform, title, body) {
         ${title ? `<div class="ig-title"><strong>${escapeHtml(title)}</strong></div>` : ''}
         <div class="ig-text">${md}</div>
       </div>
+      ${footer}
       ${counter}
     </div>`;
 
-  if (platform === 'telegram') return `
+  if (platform === 'telegram' || platform === 'max') return `
     <div class="tg-preview">
       <div class="tg-bubble" style="border-left-color:${p.color}">
         ${title ? `<div class="tg-title">${escapeHtml(title)}</div>` : ''}
         <div class="tg-text">${md}</div>
       </div>
+      ${footer}
       ${counter}
     </div>`;
 
@@ -425,15 +601,7 @@ function buildPreview(platform, title, body) {
         <div><strong>Ещё одна галочка</strong><br><small style="color:var(--muted)">только что</small></div>
       </div>
       <div class="vk-text">${md}</div>
-      ${counter}
-    </div>`;
-
-  if (platform === 'max') return `
-    <div class="tg-preview">
-      <div class="tg-bubble" style="border-left-color:${p.color}">
-        ${title ? `<div class="tg-title">${escapeHtml(title)}</div>` : ''}
-        <div class="tg-text">${md}</div>
-      </div>
+      ${footer}
       ${counter}
     </div>`;
 
@@ -441,14 +609,16 @@ function buildPreview(platform, title, body) {
     <div class="zen-preview">
       <h2 class="zen-title">${escapeHtml(title) || 'Заголовок публикации'}</h2>
       <div class="zen-text">${md}</div>
+      ${footer}
       ${counter}
     </div>`;
 
   return '<p>Нет предпросмотра</p>';
 }
 
-async function showHistory(draftId) {
-  const versions = await dbGetVersions(db, draftId);
+// ============ History ============
+async function showHistory(postId) {
+  const versions = await dbGetVersions(db, postId);
   versions.sort((a, b) => b.savedAt - a.savedAt);
   const root = document.getElementById('modal-root');
   root.innerHTML = `
@@ -458,7 +628,7 @@ async function showHistory(draftId) {
         <h2>История версий</h2>
         <span style="width:40px"></span>
       </header>
-      <div class="modal-body">
+      <div class="editor-view">
         ${!versions.length ? '<p class="empty">Версий пока нет</p>' : versions.map(v => `
           <div class="version-card">
             <div class="version-meta">${fmtDateTime(v.savedAt)} · ${escapeHtml(v.comment || '')}</div>
@@ -466,7 +636,7 @@ async function showHistory(draftId) {
             <div class="version-snippet">${escapeHtml((v.body || '').slice(0, 100))}${(v.body || '').length > 100 ? '…' : ''}</div>
             <div class="version-actions">
               <button data-view-id="${v.id}">Просмотр</button>
-              <button class="btn-primary" data-restore-id="${v.id}" data-draft-id="${draftId}">Восстановить</button>
+              <button class="btn-primary" data-restore-id="${v.id}" data-post-id="${postId}">Восстановить</button>
             </div>
           </div>`).join('')}
       </div>
@@ -474,26 +644,40 @@ async function showHistory(draftId) {
   root.querySelector('[data-close]').onclick = () => closeModal();
   root.querySelectorAll('[data-view-id]').forEach(b => {
     b.onclick = async () => {
-      const v = await dbGet(db, 'draft_versions', b.dataset.viewId);
+      const v = await dbGet(db, 'post_versions', b.dataset.viewId);
       alert(`Версия от ${fmtDateTime(v.savedAt)}\n\n${v.title || '—'}\n\n${v.body || ''}`);
     };
   });
   root.querySelectorAll('[data-restore-id]').forEach(b => {
     b.onclick = async () => {
-      if (!confirm('Восстановить эту версию? Текущая будет сохранена в истории.')) return;
-      const v = await dbGet(db, 'draft_versions', b.dataset.restoreId);
-      const draft = await dbGet(db, 'drafts', b.dataset.draftId);
-      await dbPut(db, 'draft_versions', {
-        id: uid(), draftId: draft.id,
-        title: draft.title, body: draft.body,
+      if (!confirm('Восстановить эту версию? Текущее состояние сохранится в истории.')) return;
+      const v = await dbGet(db, 'post_versions', b.dataset.restoreId);
+      const post = await dbGet(db, 'posts', b.dataset.postId);
+      // Save current state
+      await dbPut(db, 'post_versions', {
+        id: uid(), postId: post.id,
+        title: post.title, body: post.body,
+        status: post.status, channels: [...(post.channels || [])], tags: [...(post.tags || [])],
+        seriesName: post.seriesName, seriesPart: post.seriesPart, seriesTotal: post.seriesTotal,
+        publishDate: post.publishDate,
         savedAt: Date.now(), comment: 'До восстановления',
       });
-      draft.title = v.title; draft.body = v.body; draft.updatedAt = Date.now();
-      await dbPut(db, 'drafts', draft);
+      // Apply version (content fields only; related links stay current)
+      post.title = v.title || '';
+      post.body = v.body || '';
+      post.status = v.status || post.status;
+      post.channels = v.channels || post.channels;
+      post.tags = v.tags || post.tags;
+      post.seriesName = v.seriesName || '';
+      post.seriesPart = v.seriesPart ?? null;
+      post.seriesTotal = v.seriesTotal ?? null;
+      post.publishDate = v.publishDate || '';
+      post.updatedAt = Date.now();
+      await dbPut(db, 'posts', post);
       await markChange();
       closeModal();
       toast('Восстановлено ✓');
-      openDraftEditor(draft.id);
+      openPostEditor(post.id);
     };
   });
 }
@@ -532,7 +716,7 @@ async function openIdeaEditor(id) {
         <h2>${id ? 'Идея' : 'Новая идея'}</h2>
         <button class="btn-primary" id="save-idea">Сохранить</button>
       </header>
-      <div class="modal-body">
+      <div class="editor-view">
         <label class="label">Заголовок</label>
         <input id="idea-title" type="text" value="${escapeHtml(idea.title)}" placeholder="О чём идея?">
         <label class="label">Описание</label>
@@ -598,8 +782,8 @@ function updateBackupBadge() {
 }
 
 async function exportAll() {
-  const result = { exportedAt: new Date().toISOString(), version: 1, app: 'eshe-odna-galochka' };
-  for (const store of ['ideas', 'drafts', 'draft_versions', 'content_plan', 'mission']) {
+  const result = { exportedAt: new Date().toISOString(), version: 2, app: 'eshe-odna-galochka' };
+  for (const store of ['ideas', 'posts', 'post_versions', 'mission']) {
     result[store] = await dbGetAll(db, store);
   }
   return result;
@@ -623,7 +807,6 @@ async function sendBackup() {
       if (currentTab === 'settings') renderSettings();
       toast('Бэкап отправлен ✓');
     } else {
-      // Fallback: download
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = filename; a.click();
@@ -644,7 +827,7 @@ async function handleRestoreFile(e) {
     if (!confirm('Восстановить из бэкапа? Записи с совпадающими ID будут перезаписаны, остальные добавятся.')) {
       e.target.value = ''; return;
     }
-    for (const store of ['ideas', 'drafts', 'draft_versions', 'content_plan', 'mission']) {
+    for (const store of ['ideas', 'posts', 'post_versions', 'mission']) {
       if (!Array.isArray(data[store])) continue;
       for (const item of data[store]) await dbPut(db, store, item);
     }
