@@ -1,0 +1,15 @@
+{
+  "name": "Ещё одна галочка",
+  "short_name": "Галочка",
+  "description": "Портал управления блогом",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F4EBDD",
+  "theme_color": "#F4EBDD",
+  "lang": "ru",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
