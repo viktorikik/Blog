@@ -7,15 +7,15 @@ const PLATFORMS = {
   zen:       { name: 'Дзен',      color: '#292724', maxLength: 10000 },
 };
 const POST_STATUSES = {
-  draft:     { label: 'Черновик',     color: '#687B59' },
-  review:    { label: 'На вычитке',   color: '#F27691' },
-  ready:     { label: 'Готово',       color: '#DCEB32' },
-  published: { label: 'Опубликовано', color: '#292724' },
+  draft:     { label: 'Черновик',     color: 'var(--sage-light)' },
+  review:    { label: 'На вычитке',   color: 'var(--coral)' },
+  ready:     { label: 'Готово',       color: 'var(--lime)' },
+  published: { label: 'Опубликовано', color: 'var(--graphite)' },
 };
 const IDEA_STATUSES = {
-  new:      { label: 'Новая',     color: '#687B59' },
-  approved: { label: 'Одобрена',  color: '#DCEB32' },
-  in_work:  { label: 'В работе',  color: '#F27691' },
+  new:      { label: 'Новая',     color: 'var(--sage-light)' },
+  approved: { label: 'Одобрена',  color: 'var(--lime)' },
+  in_work:  { label: 'В работе',  color: 'var(--coral)' },
   rejected: { label: 'Отклонена', color: '#d8cdbd' },
 };
 const SECTION_TITLES = {
@@ -32,7 +32,6 @@ function openDB() {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
-      // v1 stores we no longer need
       for (const old of ['drafts', 'draft_versions', 'content_plan']) {
         if (db.objectStoreNames.contains(old)) db.deleteObjectStore(old);
       }
@@ -94,6 +93,69 @@ function insertMd(textarea, before, after, placeholder) {
 }
 function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
 
+// ============ Swipe to delete ============
+function setupSwipe(wrapper, onDelete) {
+  const content = wrapper.querySelector('.swipe-content');
+  let startX = 0, startY = 0, currentX = 0;
+  let isDragging = false;
+  const threshold = 60;
+
+  content.addEventListener('touchstart', e => {
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    isDragging = true;
+    content.style.transition = 'none';
+  }, {passive: true});
+
+  content.addEventListener('touchmove', e => {
+    if (!isDragging) return;
+    currentX = e.touches[0].clientX;
+    let diffX = currentX - startX;
+    let diffY = e.touches[0].clientY - startY;
+
+    // Если движение больше по вертикали, не мешаем скроллу
+    if (Math.abs(diffY) > Math.abs(diffX) && content.style.transform === 'translateX(0px)') {
+      isDragging = false;
+      return;
+    }
+
+    if (diffX < 0) {
+      if (Math.abs(diffX) > 10) e.preventDefault(); // Блокируем скролл при свайпе
+      let move = Math.max(-80, diffX);
+      content.style.transform = `translateX(${move}px)`;
+    }
+  }, {passive: false});
+
+  content.addEventListener('touchend', () => {
+    if (!isDragging) return;
+    isDragging = false;
+    content.style.transition = 'transform 0.2s';
+    let diffX = currentX - startX;
+    
+    if (diffX < -threshold) {
+      content.style.transform = `translateX(-80px)`;
+    } else {
+      content.style.transform = `translateX(0px)`;
+    }
+    startX = 0; currentX = 0;
+  });
+
+  // Клик по контенту, если он открыт, чтобы закрыть
+  content.addEventListener('click', (e) => {
+    if (content.style.transform === 'translateX(-80px)') {
+      e.preventDefault();
+      e.stopPropagation();
+      content.style.transform = 'translateX(0px)';
+    }
+  });
+
+  // Клик по кнопке удаления
+  wrapper.querySelector('.swipe-delete').addEventListener('click', () => {
+    content.style.transform = 'translateX(0px)';
+    onDelete();
+  });
+}
+
 // ============ State ============
 let db;
 let currentTab = 'plan';
@@ -147,32 +209,34 @@ async function handleGlobalClick(e) {
     case 'new-plan': openPostEditor('new', { prefillDate: true, openTab: 'meta' }); break;
     case 'new-post': openPostEditor('new', { openTab: 'text' }); break;
     case 'edit-post': openPostEditor(id); break;
-    case 'delete-post':
-      if (confirm('Удалить пост и его историю?')) {
-        await deletePost(id);
-        await markChange();
-        switchTab(currentTab);
-      }
-      break;
     case 'new-idea': openIdeaEditor(null); break;
     case 'edit-idea': openIdeaEditor(id); break;
-    case 'delete-idea':
-      if (confirm('Удалить идею?')) { await dbDelete(db, 'ideas', id); await markChange(); renderIdeas(); }
-      break;
     case 'save-mission': saveMission(); break;
     case 'backup-now': sendBackup(); break;
     case 'restore-backup': document.getElementById('restore-file').click(); break;
   }
 }
 
+async function executeDeletePost(id) {
+  await deletePost(id);
+  await markChange();
+  switchTab(currentTab);
+}
+
+async function executeDeleteIdea(id) {
+  await dbDelete(db, 'ideas', id);
+  await markChange();
+  renderIdeas();
+}
+
 // ============ Post card ============
 function buildPostCard(post, mode) {
-  // mode: 'plan' | 'posts'
   const status = POST_STATUSES[post.status] || POST_STATUSES.draft;
   const channelPills = (post.channels || []).map(ch => {
     const p = PLATFORMS[ch];
-    return p ? `<span class="channel-pill" style="background:${p.color}">${p.name}</span>` : '';
+    return p ? `<span class="channel-pill" style="background:${p.color}; color: ${ch==='max'||ch==='zen'?'white':'var(--graphite)'}">${p.name}</span>` : '';
   }).join('');
+  
   const tagsHtml = (post.tags || []).length
     ? `<div class="tags">${post.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>`
     : '';
@@ -191,20 +255,27 @@ function buildPostCard(post, mode) {
   }
 
   return `
-    <div class="card">
-      <div class="card-row">
-        ${channelPills}
-        <span class="status-pill" style="background:${status.color}">${status.label}</span>
+    <div class="swipe-wrapper">
+      <div class="swipe-actions">
+        <button class="swipe-delete">
+          <span style="font-size:1.2rem">🗑</span>
+          Удалить
+        </button>
       </div>
-      <h3 class="card-title">${escapeHtml(post.title || 'Без названия')}</h3>
-      ${snippet ? `<p class="card-body">${escapeHtml(snippet)}${(post.body || '').length > 120 ? '…' : ''}</p>` : ''}
-      ${seriesHtml}
-      ${tagsHtml}
-      ${metaLine}
-      ${relatedHtml ? `<div style="margin-top:6px">${relatedHtml}</div>` : ''}
-      <div class="card-actions">
-        <button data-action="edit-post" data-id="${post.id}" title="Открыть">✎</button>
-        <button data-action="delete-post" data-id="${post.id}" title="Удалить">🗑</button>
+      <div class="swipe-content card">
+        <div class="card-row">
+          ${channelPills}
+          <span class="status-pill" style="background:${status.color}">${status.label}</span>
+        </div>
+        <h3 class="card-title">${escapeHtml(post.title || 'Без названия')}</h3>
+        ${snippet ? `<p class="card-body">${escapeHtml(snippet)}${(post.body || '').length > 120 ? '…' : ''}</p>` : ''}
+        ${seriesHtml}
+        ${tagsHtml}
+        ${metaLine}
+        ${relatedHtml ? `<div style="margin-top:6px">${relatedHtml}</div>` : ''}
+        <div class="card-actions">
+          <button data-action="edit-post" data-id="${post.id}" title="Открыть">✎</button>
+        </div>
       </div>
     </div>`;
 }
@@ -223,7 +294,16 @@ async function renderPlan() {
   });
   const el = document.getElementById('plan-list');
   if (!plans.length) { el.innerHTML = '<p class="empty">План пуст. Запланируйте первый пост или добавьте дату существующему.</p>'; return; }
+  
   el.innerHTML = plans.map(p => buildPostCard(p, 'plan')).join('');
+  
+  // Привязываем свайп
+  el.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
+    const id = wrapper.querySelector('[data-id]').dataset.id;
+    setupSwipe(wrapper, () => {
+      if (confirm('Удалить этот пост?')) executeDeletePost(id);
+    });
+  });
 }
 
 // ============ Posts view ============
@@ -232,7 +312,15 @@ async function renderPosts() {
   posts.sort((a, b) => b.updatedAt - a.updatedAt);
   const el = document.getElementById('posts-list');
   if (!posts.length) { el.innerHTML = '<p class="empty">Постов пока нет. Начните с нового.</p>'; return; }
+  
   el.innerHTML = posts.map(p => buildPostCard(p, 'posts')).join('');
+  
+  el.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
+    const id = wrapper.querySelector('[data-id]').dataset.id;
+    setupSwipe(wrapper, () => {
+      if (confirm('Удалить этот пост?')) executeDeletePost(id);
+    });
+  });
 }
 
 // ============ Post editor ============
@@ -338,7 +426,6 @@ async function openPostEditor(id, opts = {}) {
   const titleEl = root.querySelector('#post-title');
   const bodyEl = root.querySelector('#post-body');
 
-  // Tabs
   root.querySelectorAll('.modal-tab').forEach(t => {
     t.onclick = () => {
       root.querySelectorAll('.modal-tab').forEach(x => x.classList.remove('active'));
@@ -348,7 +435,6 @@ async function openPostEditor(id, opts = {}) {
     };
   });
 
-  // Format bar
   root.querySelectorAll('.format-bar button').forEach(b => {
     b.onclick = () => {
       const md = b.dataset.md;
@@ -360,7 +446,6 @@ async function openPostEditor(id, opts = {}) {
     };
   });
 
-  // Channels picker
   function renderChannels() {
     root.querySelectorAll('.channel-toggle').forEach(btn => {
       btn.classList.toggle('active', selectedChannels.includes(btn.dataset.channel));
@@ -379,7 +464,6 @@ async function openPostEditor(id, opts = {}) {
   });
   renderChannels();
 
-  // Related picker
   function renderChips() {
     const el = root.querySelector('#related-chips');
     el.innerHTML = selectedRelatedIds.map(id => {
@@ -421,7 +505,6 @@ async function openPostEditor(id, opts = {}) {
   root.querySelector('#related-search').oninput = (e) => renderSuggestions(e.target.value);
   renderChips();
 
-  // Preview
   async function renderPreview() {
     root.querySelectorAll('.platform-tab').forEach(t => t.classList.toggle('active', t.dataset.platform === currentPlatform));
     const relatedTitles = [];
@@ -441,7 +524,6 @@ async function openPostEditor(id, opts = {}) {
     t.onclick = () => { currentPlatform = t.dataset.platform; renderPreview(); };
   });
 
-  // Close
   root.querySelector('[data-close]').onclick = () => {
     const changed = isNew
       ? (titleEl.value || bodyEl.value)
@@ -451,12 +533,10 @@ async function openPostEditor(id, opts = {}) {
     switchTab(currentTab);
   };
 
-  // History
   if (!isNew) {
     root.querySelector('#post-history').onclick = () => showHistory(post.id);
   }
 
-  // Save
   root.querySelector('#post-save').onclick = async () => {
     post.title = titleEl.value.trim();
     post.body = bodyEl.value;
@@ -475,7 +555,6 @@ async function openPostEditor(id, opts = {}) {
     }
     post.updatedAt = Date.now();
 
-    // Version snapshot
     await dbPut(db, 'post_versions', {
       id: uid(), postId: post.id,
       title: post.title, body: post.body,
@@ -486,11 +565,9 @@ async function openPostEditor(id, opts = {}) {
       comment: isNew ? 'Создан' : 'Изменён',
     });
 
-    // Bidirectional related links
     await updateRelatedLinks(post.id, selectedRelatedIds);
     post.relatedPostIds = [...selectedRelatedIds];
 
-    // Save post
     await dbPut(db, 'posts', post);
     await markChange();
     toast('Сохранено ✓');
@@ -498,7 +575,6 @@ async function openPostEditor(id, opts = {}) {
     if (isNew) { closeModal(); switchTab('posts'); }
   };
 
-  // Open requested tab
   const initialTab = opts.openTab || 'text';
   if (initialTab === 'preview') {
     root.querySelector('[data-mode="preview"]').click();
@@ -507,7 +583,6 @@ async function openPostEditor(id, opts = {}) {
   }
 }
 
-// ============ Related links (bidirectional) ============
 async function updateRelatedLinks(postId, newIds) {
   const post = await dbGet(db, 'posts', postId);
   if (!post) return;
@@ -534,7 +609,6 @@ async function updateRelatedLinks(postId, newIds) {
 }
 
 async function deletePost(id) {
-  // Clean up reverse links
   const others = await dbGetAll(db, 'posts');
   for (const p of others) {
     if (p.id !== id && (p.relatedPostIds || []).includes(id)) {
@@ -543,14 +617,11 @@ async function deletePost(id) {
       await dbPut(db, 'posts', p);
     }
   }
-  // Delete versions
   const versions = await dbGetVersions(db, id);
   for (const v of versions) await dbDelete(db, 'post_versions', v.id);
-  // Delete post
   await dbDelete(db, 'posts', id);
 }
 
-// ============ Preview builder ============
 function buildPreview(platform, title, body, series, relatedTitles) {
   const p = PLATFORMS[platform];
   const len = body.length;
@@ -616,7 +687,6 @@ function buildPreview(platform, title, body, series, relatedTitles) {
   return '<p>Нет предпросмотра</p>';
 }
 
-// ============ History ============
 async function showHistory(postId) {
   const versions = await dbGetVersions(db, postId);
   versions.sort((a, b) => b.savedAt - a.savedAt);
@@ -653,7 +723,6 @@ async function showHistory(postId) {
       if (!confirm('Восстановить эту версию? Текущее состояние сохранится в истории.')) return;
       const v = await dbGet(db, 'post_versions', b.dataset.restoreId);
       const post = await dbGet(db, 'posts', b.dataset.postId);
-      // Save current state
       await dbPut(db, 'post_versions', {
         id: uid(), postId: post.id,
         title: post.title, body: post.body,
@@ -662,7 +731,6 @@ async function showHistory(postId) {
         publishDate: post.publishDate,
         savedAt: Date.now(), comment: 'До восстановления',
       });
-      // Apply version (content fields only; related links stay current)
       post.title = v.title || '';
       post.body = v.body || '';
       post.status = v.status || post.status;
@@ -688,20 +756,38 @@ async function renderIdeas() {
   ideas.sort((a, b) => b.createdAt - a.createdAt);
   const list = document.getElementById('ideas-list');
   if (!ideas.length) { list.innerHTML = '<p class="empty">Пока пусто. Запишите первую идею.</p>'; return; }
+  
   list.innerHTML = ideas.map(i => {
     const st = IDEA_STATUSES[i.status] || IDEA_STATUSES.new;
     return `
-      <div class="card">
-        <div class="card-row"><span class="status-pill" style="background:${st.color}">${st.label}</span></div>
-        <h3 class="card-title">${escapeHtml(i.title)}</h3>
-        ${i.description ? `<p class="card-body">${escapeHtml(i.description)}</p>` : ''}
-        ${i.tags ? `<div class="tags">${i.tags.split(',').map(t => `<span class="tag">${escapeHtml(t.trim())}</span>`).join('')}</div>` : ''}
-        <div class="card-actions">
-          <button data-action="edit-idea" data-id="${i.id}" title="Изменить">✎</button>
-          <button data-action="delete-idea" data-id="${i.id}" title="Удалить">🗑</button>
+      <div class="swipe-wrapper">
+        <div class="swipe-actions">
+          <button class="swipe-delete">
+            <span style="font-size:1.2rem">🗑</span>
+            Удалить
+          </button>
+        </div>
+        <div class="swipe-content card">
+          <div class="card-row">
+            <span class="status-pill" style="background:${st.color}">${st.label}</span>
+          </div>
+          <h3 class="card-title">${escapeHtml(i.title)}</h3>
+          ${i.description ? `<p class="card-body">${escapeHtml(i.description)}</p>` : ''}
+          ${i.tags ? `<div class="tags">${i.tags.split(',').map(t => `<span class="tag">${escapeHtml(t.trim())}</span>`).join('')}</div>` : ''}
+          <div class="card-actions">
+            <button data-action="edit-idea" data-id="${i.id}" title="Изменить">✎</button>
+          </div>
         </div>
       </div>`;
   }).join('');
+
+  // Привязываем свайп
+  list.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
+    const id = wrapper.querySelector('[data-id]').dataset.id;
+    setupSwipe(wrapper, () => {
+      if (confirm('Удалить эту идею?')) executeDeleteIdea(id);
+    });
+  });
 }
 
 async function openIdeaEditor(id) {
@@ -744,7 +830,6 @@ async function openIdeaEditor(id) {
   };
 }
 
-// ============ Mission ============
 async function saveMission() {
   const body = document.getElementById('mission-body').value;
   await dbPut(db, 'mission', { id: 'main', body, updatedAt: Date.now() });
@@ -752,7 +837,6 @@ async function saveMission() {
   toast('Сохранено ✓');
 }
 
-// ============ Settings ============
 async function renderSettings() {
   const settings = await dbGet(db, 'settings', 'main');
   const el = document.getElementById('last-backup');
@@ -761,7 +845,6 @@ async function renderSettings() {
     : 'Последний бэкап: —';
 }
 
-// ============ Backup ============
 async function markChange() {
   const settings = await dbGet(db, 'settings', 'main');
   settings.pendingChanges = (settings.pendingChanges || 0) + 1;
@@ -839,5 +922,4 @@ async function handleRestoreFile(e) {
   e.target.value = '';
 }
 
-// ============ Start ============
 init();
