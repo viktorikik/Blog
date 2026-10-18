@@ -1,4 +1,4 @@
-const CACHE = 'galochka-v2';
+const CACHE = 'galochka-v3'; // Обновили версию кэша
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', (e) => {
