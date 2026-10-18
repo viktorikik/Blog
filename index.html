@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4EBDD">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Галочка">
+<title>Ещё одна галочка — портал</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <header id="app-header">
+    <h1 id="section-title">Контент-план</h1>
+    <button id="backup-badge" class="backup-badge hidden" title="Отправить бэкап">
+      <span>📥</span><span id="backup-count">0</span>
+    </button>
+  </header>
+
+  <main id="main">
+    <section id="section-plan" class="section active">
+      <div class="section-toolbar">
+        <button class="btn-primary" data-action="new-plan">+ Пост в план</button>
+      </div>
+      <div id="plan-list" class="list"></div>
+    </section>
+
+    <section id="section-drafts" class="section">
+      <div class="section-toolbar">
+        <button class="btn-primary" data-action="new-draft">+ Новый черновик</button>
+      </div>
+      <div id="drafts-list" class="list"></div>
+    </section>
+
+    <section id="section-ideas" class="section">
+      <div class="section-toolbar">
+        <button class="btn-primary" data-action="new-idea">+ Новая идея</button>
+      </div>
+      <div id="ideas-list" class="list"></div>
+    </section>
+
+    <section id="section-mission" class="section">
+      <div class="mission-editor">
+        <label for="mission-body" class="label">Миссия канала</label>
+        <textarea id="mission-body" placeholder="Зачем существует канал? Для кого? Какие ценности?"></textarea>
+        <button class="btn-primary" style="margin-top:12px" data-action="save-mission">Сохранить</button>
+      </div>
+    </section>
+
+    <section id="section-settings" class="section">
+      <div class="settings-block">
+        <h3>Резервное копирование</h3>
+        <p class="hint">Бэкап накапливается при каждом сохранении. Нажмите бейдж в шапке (📥), чтобы отправить JSON-файл на почту через «Поделиться».</p>
+        <button class="btn-secondary" data-action="backup-now">Отправить бэкап сейчас</button>
+        <button class="btn-secondary" data-action="restore-backup">Восстановить из файла</button>
+        <input type="file" id="restore-file" accept="application/json" hidden>
+        <p class="hint" id="last-backup">Последний бэкап: —</p>
+      </div>
+      <div class="settings-block">
+        <h3>О приложении</h3>
+        <p class="hint">Версия 0.1.0. Данные хранятся локально в браузере (IndexedDB). Установите на главный экран — иначе Safari может удалить данные после 7 дней неиспользования.</p>
+      </div>
+    </section>
+  </main>
+
+  <nav id="bottom-nav">
+    <button data-tab="plan" class="nav-btn active"><span class="nav-icon">📅</span><span>План</span></button>
+    <button data-tab="drafts" class="nav-btn"><span class="nav-icon">✍️</span><span>Черновики</span></button>
+    <button data-tab="ideas" class="nav-btn"><span class="nav-icon">💡</span><span>Идеи</span></button>
+    <button data-tab="mission" class="nav-btn"><span class="nav-icon">🎯</span><span>Миссия</span></button>
+    <button data-tab="settings" class="nav-btn"><span class="nav-icon">⚙️</span><span>Настройки</span></button>
+  </nav>
+</div>
+
+<div id="modal-root"></div>
+<script src="app.js"></script>
+</body>
+</html>
