@@ -24,16 +24,16 @@
   <main id="main">
     <section id="section-plan" class="section active">
       <div class="section-toolbar">
-        <button class="btn-primary" data-action="new-plan">+ Пост в план</button>
+        <button class="btn-primary" data-action="new-plan">+ Запланировать пост</button>
       </div>
       <div id="plan-list" class="list"></div>
     </section>
 
-    <section id="section-drafts" class="section">
+    <section id="section-posts" class="section">
       <div class="section-toolbar">
-        <button class="btn-primary" data-action="new-draft">+ Новый черновик</button>
+        <button class="btn-primary" data-action="new-post">+ Новый пост</button>
       </div>
-      <div id="drafts-list" class="list"></div>
+      <div id="posts-list" class="list"></div>
     </section>
 
     <section id="section-ideas" class="section">
@@ -54,7 +54,7 @@
     <section id="section-settings" class="section">
       <div class="settings-block">
         <h3>Резервное копирование</h3>
-        <p class="hint">Бэкап накапливается при каждом сохранении. Нажмите бейдж в шапке (📥), чтобы отправить JSON-файл на почту через «Поделиться».</p>
+        <p class="hint">Бэкап накапливается при каждом сохранении. Нажмите бейдж 📥 в шапке, чтобы отправить JSON-файл на почту через «Поделиться».</p>
         <button class="btn-secondary" data-action="backup-now">Отправить бэкап сейчас</button>
         <button class="btn-secondary" data-action="restore-backup">Восстановить из файла</button>
         <input type="file" id="restore-file" accept="application/json" hidden>
@@ -62,14 +62,15 @@
       </div>
       <div class="settings-block">
         <h3>О приложении</h3>
-        <p class="hint">Версия 0.1.0. Данные хранятся локально в браузере (IndexedDB). Установите на главный экран — иначе Safari может удалить данные после 7 дней неиспользования.</p>
+        <p class="hint">Версия 0.2.0. Посты с датой публикации попадают в план, без даты — в общий список. Связи между постами двусторонние; серии — направленные.</p>
+        <p class="hint">Данные хранятся локально в браузере (IndexedDB). Установите на главный экран — иначе Safari может удалить данные после 7 дней неиспользования.</p>
       </div>
     </section>
   </main>
 
   <nav id="bottom-nav">
     <button data-tab="plan" class="nav-btn active"><span class="nav-icon">📅</span><span>План</span></button>
-    <button data-tab="drafts" class="nav-btn"><span class="nav-icon">✍️</span><span>Черновики</span></button>
+    <button data-tab="posts" class="nav-btn"><span class="nav-icon">✍️</span><span>Посты</span></button>
     <button data-tab="ideas" class="nav-btn"><span class="nav-icon">💡</span><span>Идеи</span></button>
     <button data-tab="mission" class="nav-btn"><span class="nav-icon">🎯</span><span>Миссия</span></button>
     <button data-tab="settings" class="nav-btn"><span class="nav-icon">⚙️</span><span>Настройки</span></button>
