@@ -25,6 +25,12 @@ const SECTION_TITLES = {
 const MONTH_NAMES = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
+const TEMPLATES = {
+  'Личный опыт': '## С чем я столкнулся\n\nОпишите проблему или ситуацию.\n\n## Как я это решил\n\n- Шаг 1\n- Шаг 2\n- Шаг 3\n\n## Вывод\n\nКороткая мысль в конце.',
+  'Обзор': '## Что это\n\nКороткое описание.\n\n## Плюсы\n- \n- \n\n## Минусы\n- \n- \n\n## Итог\n\nКому подойдёт?',
+  'Чек-лист': 'Вот что нужно сделать:\n\n- [ ] Пункт 1\n- [ ] Пункт 2\n- [ ] Пункт 3\n\nА вы как справляетесь? Напишите в комментариях.'
+};
+
 // ============ DB ============
 const DB_NAME = 'eshe-odna-galochka';
 const DB_VERSION = 2;
@@ -176,9 +182,9 @@ let pendingBackupCount = 0;
 let searchQuery = '';
 let filterChannel = 'all';
 let emailjsConfig = { service: '', template: '', publicKey: '' };
-let planViewMode = 'list'; // list | calendar
-let postsViewMode = 'list'; // list | kanban
-let currentCalendarDate = new Date(); // Для навигации по месяцам
+let planViewMode = 'list';
+let postsViewMode = 'list';
+let currentCalendarDate = new Date();
 
 // ============ Init ============
 async function init() {
@@ -198,7 +204,6 @@ async function init() {
     }
   }
 
-  // Тема
   if (settings.theme === 'dark') {
     document.body.classList.add('dark');
     document.getElementById('theme-toggle').textContent = '☀️';
@@ -285,9 +290,16 @@ function setupViewToggles() {
       planToggle.querySelectorAll('button').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       planViewMode = btn.dataset.view === 'plan-calendar' ? 'calendar' : 'list';
-      document.getElementById('plan-filters').classList.toggle('hidden', planViewMode === 'calendar');
-      document.getElementById('plan-list').classList.toggle('hidden', planViewMode === 'calendar');
-      document.getElementById('plan-calendar').classList.toggle('hidden', planViewMode === 'list');
+      
+      if (planViewMode === 'calendar') {
+        document.getElementById('plan-filters').classList.add('hidden');
+        document.getElementById('plan-list').classList.add('hidden');
+        document.getElementById('plan-calendar').classList.remove('hidden');
+      } else {
+        document.getElementById('plan-filters').classList.remove('hidden');
+        document.getElementById('plan-list').classList.remove('hidden');
+        document.getElementById('plan-calendar').classList.add('hidden');
+      }
       renderPlan();
     });
   }
@@ -300,9 +312,16 @@ function setupViewToggles() {
       postsToggle.querySelectorAll('button').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       postsViewMode = btn.dataset.view === 'posts-kanban' ? 'kanban' : 'list';
-      document.getElementById('posts-filters').classList.toggle('hidden', postsViewMode === 'kanban');
-      document.getElementById('posts-list').classList.toggle('hidden', postsViewMode === 'kanban');
-      document.getElementById('posts-kanban').classList.toggle('hidden', postsViewMode === 'list');
+      
+      if (postsViewMode === 'kanban') {
+        document.getElementById('posts-filters').classList.add('hidden');
+        document.getElementById('posts-list').classList.add('hidden');
+        document.getElementById('posts-kanban').classList.remove('hidden');
+      } else {
+        document.getElementById('posts-filters').classList.remove('hidden');
+        document.getElementById('posts-list').classList.remove('hidden');
+        document.getElementById('posts-kanban').classList.add('hidden');
+      }
       renderPosts();
     });
   }
@@ -371,6 +390,15 @@ function buildPostCard(post, mode) {
     metaLine = `<div class="card-meta">Изменён ${fmtDateTime(post.updatedAt)}${post.publishDate ? ` · 📅 ${fmtDate(new Date(post.publishDate).getTime())}` : ''}</div>`;
   }
 
+  // Проверка чек-листа
+  let warningHtml = '';
+  if (post.status === 'ready' || post.status === 'published') {
+    const c = post.checklist || {};
+    if (!c.text || !c.image || !c.links || !c.tags) {
+      warningHtml = `<div class="card-warning">⚠️ Чек-лист не заполнен</div>`;
+    }
+  }
+
   const coverHtml = post.coverImage ? `<img src="${post.coverImage}" class="card-cover" alt="">` : '';
 
   return `
@@ -386,6 +414,7 @@ function buildPostCard(post, mode) {
         </div>
         <h3 class="card-title">${escapeHtml(post.title || 'Без названия')}</h3>
         ${snippet ? `<p class="card-body">${escapeHtml(snippet)}${(post.body || '').length > 120 ? '…' : ''}</p>` : ''}
+        ${warningHtml}
         ${seriesHtml}
         ${tagsHtml}
         ${metaLine}
@@ -430,7 +459,6 @@ async function renderCalendar() {
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
   
-  // День недели первого дня (0 - Вс, 1 - Пн). Переделаем в 0 - Пн, 6 - Вс
   let startDayOfWeek = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
   const daysInMonth = lastDay.getDate();
   
@@ -450,19 +478,16 @@ async function renderCalendar() {
   }
   
   const todayStr = today();
-  let selectedDateStr = null;
-  let selectedDayPosts = [];
   
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const dayPosts = plans.filter(p => p.publishDate === dateStr);
     const isToday = dateStr === todayStr;
     
-    // Dots for channels
     const dots = dayPosts.map(p => {
       const ch = p.channels && p.channels.length > 0 ? p.channels[0] : 'max';
       return `<div class="cal-dot" style="background:${PLATFORMS[ch]?.color || '#292724'}"></div>`;
-    }).slice(0, 4).join(''); // max 4 dots
+    }).slice(0, 4).join('');
     
     html += `<div class="cal-day ${isToday?'today':''} ${dayPosts.length?'has-posts':''}" data-date="${dateStr}">
       ${d}
@@ -476,7 +501,6 @@ async function renderCalendar() {
   document.getElementById('cal-prev').onclick = () => { currentCalendarDate.setMonth(currentCalendarDate.getMonth() - 1); renderCalendar(); };
   document.getElementById('cal-next').onclick = () => { currentCalendarDate.setMonth(currentCalendarDate.getMonth() + 1); renderCalendar(); };
   
-  // Клик по дню
   document.querySelectorAll('.cal-day[data-date]').forEach(cell => {
     cell.onclick = () => {
       const date = cell.dataset.date;
@@ -518,7 +542,6 @@ async function renderPosts() {
 // ============ Kanban Render ============
 async function renderKanban() {
   const posts = await dbGetAll(db, 'posts');
-  // На канбане мы не фильтруем по каналам, чтобы видеть всю картину, но поиск работает
   const filtered = posts.filter(p => {
     if (!searchQuery) return true;
     return ((p.title || '') + ' ' + (p.body || '')).toLowerCase().includes(searchQuery);
@@ -560,13 +583,10 @@ function copyPostText(platform) {
   let textToCopy = '';
   
   if (platform === 'telegram' || platform === 'vk') {
-    // Оставляем Markdown для Telegram, но убираем для VK (обычно там не рендерится)
     textToCopy = platform === 'telegram' ? `${title ? title+'\n\n' : ''}${body}` : stripMarkdown(`${title ? title+'\n\n' : ''}${body}`);
   } else if (platform === 'zen') {
-    // Дзен: только текст, заголовок отдельно (вставляется в поле заголовка)
     textToCopy = stripMarkdown(body);
   } else {
-    // Insta, MAX: просто текст
     textToCopy = stripMarkdown(`${title ? title+'\n\n' : ''}${body}`);
   }
   
@@ -585,10 +605,13 @@ async function openPostEditor(id, opts = {}) {
     post = {
       id: uid(), title: '', body: '', status: 'draft', publishDate: opts.prefillDate ? today() : '',
       channels: [], tags: [], seriesName: '', seriesPart: null, seriesTotal: null,
-      relatedPostIds: [], ideaId: null, coverImage: '', createdAt: Date.now(), updatedAt: Date.now(),
+      relatedPostIds: [], ideaId: null, coverImage: '', 
+      checklist: { text: false, image: false, links: false, tags: false },
+      createdAt: Date.now(), updatedAt: Date.now(),
     };
   } else {
     post = await dbGet(db, 'posts', id);
+    if (!post.checklist) post.checklist = { text: false, image: false, links: false, tags: false };
   }
   if (!post) return toast('Пост не найден');
 
@@ -634,7 +657,12 @@ async function openPostEditor(id, opts = {}) {
         </div>
         <input type="file" id="post-image-input" accept="image/*" hidden>
 
-        <label class="label" style="margin-top:16px">Текст поста</label>
+        <label class="label" style="margin-top:16px">Шаблоны</label>
+        <div class="template-bar">
+          ${Object.keys(TEMPLATES).map(name => `<button class="template-btn" data-template="${name}">${name}</button>`).join('')}
+        </div>
+
+        <label class="label">Текст поста</label>
         <div class="format-bar">
           <button data-md="bold" title="Жирный"><b>B</b></button>
           <button data-md="italic" title="Курсив"><i>I</i></button>
@@ -650,6 +678,14 @@ async function openPostEditor(id, opts = {}) {
         <select id="post-status">
           ${Object.entries(POST_STATUSES).map(([k, v]) => `<option value="${k}" ${post.status === k ? 'selected' : ''}>${v.label}</option>`).join('')}
         </select>
+
+        <label class="label">Чек-лист готовности</label>
+        <div class="checklist-grid">
+          <label class="checklist-item"><input type="checkbox" id="check-text" ${post.checklist.text?'checked':''}> Текст написан и вычитан</label>
+          <label class="checklist-item"><input type="checkbox" id="check-image" ${post.checklist.image?'checked':''}> Картинка/обложка готова</label>
+          <label class="checklist-item"><input type="checkbox" id="check-links" ${post.checklist.links?'checked':''}> Ссылки и хэштеги проверены</label>
+          <label class="checklist-item"><input type="checkbox" id="check-tags" ${post.checklist.tags?'checked':''}> Теги и каналы указаны</label>
+        </div>
 
         <label class="label">Дата публикации</label>
         <input id="post-date" type="date" value="${post.publishDate || ''}">
@@ -692,6 +728,18 @@ async function openPostEditor(id, opts = {}) {
   const titleEl = root.querySelector('#post-title');
   const bodyEl = root.querySelector('#post-body');
 
+  // Templates
+  root.querySelectorAll('.template-btn').forEach(btn => {
+    btn.onclick = () => {
+      const tpl = TEMPLATES[btn.dataset.template];
+      if (tpl) {
+        if (bodyEl.value.trim() && !confirm('Заменить текущий текст шаблоном?')) return;
+        bodyEl.value = tpl;
+        toast('Шаблон применён');
+      }
+    };
+  });
+
   // Image Upload
   const uploadBox = root.querySelector('#upload-box');
   const imgInput = root.querySelector('#post-image-input');
@@ -712,6 +760,8 @@ async function openPostEditor(id, opts = {}) {
         <button class="image-remove" id="remove-img">×</button>
       </div>
     `;
+    const checkImg = root.querySelector('#check-image');
+    if (checkImg) checkImg.checked = true;
   };
   
   uploadBox.addEventListener('click', (e) => {
@@ -719,6 +769,8 @@ async function openPostEditor(id, opts = {}) {
       currentImage = '';
       uploadBox.innerHTML = 'Нажмите, чтобы выбрать фото';
       imgInput.value = '';
+      const checkImg = root.querySelector('#check-image');
+      if (checkImg) checkImg.checked = false;
     }
   });
 
@@ -804,9 +856,24 @@ async function openPostEditor(id, opts = {}) {
   if (!isNew) root.querySelector('#post-history').onclick = () => showHistory(post.id);
 
   root.querySelector('#post-save').onclick = async () => {
+    const newStatus = root.querySelector('#post-status').value;
+    const checklist = {
+      text: root.querySelector('#check-text').checked,
+      image: root.querySelector('#check-image').checked,
+      links: root.querySelector('#check-links').checked,
+      tags: root.querySelector('#check-tags').checked
+    };
+    
+    if (newStatus === 'published') {
+      if (!checklist.text || !checklist.image || !checklist.links || !checklist.tags) {
+        if (!confirm('Вы переводите пост в статус "Опубликовано", но чек-лист готовности заполнен не полностью. Продолжить?')) return;
+      }
+    }
+
     post.title = titleEl.value.trim();
     post.body = bodyEl.value;
-    post.status = root.querySelector('#post-status').value;
+    post.status = newStatus;
+    post.checklist = checklist;
     post.publishDate = root.querySelector('#post-date').value || '';
     post.channels = [...selectedChannels];
     post.ideaId = root.querySelector('#post-idea').value || null;
@@ -880,7 +947,6 @@ function buildPreview(platform, title, body, series, relatedTitles, image) {
   
   const imgHtml = image ? `<img src="${image}" class="ig-image">` : `<div class="ig-image-placeholder" style="background:${p.color}22">Нет фото</div>`;
   
-  // Copy button
   const copyBtn = `<button class="copy-btn" data-action="copy-text" data-platform="${platform}">Копировать</button>`;
 
   if (platform === 'instagram') return `
@@ -1095,7 +1161,7 @@ function updateBackupBadge() {
 }
 
 async function exportAll() {
-  const result = { exportedAt: new Date().toISOString(), version: 3, app: 'eshe-odna-galochka' };
+  const result = { exportedAt: new Date().toISOString(), version: 4, app: 'eshe-odna-galochka' };
   for (const store of ['ideas', 'posts', 'post_versions', 'mission']) result[store] = await dbGetAll(db, store);
   return result;
 }
