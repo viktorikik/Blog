@@ -68,14 +68,15 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .swipe-content {
   position: relative; z-index: 2;
   transition: transform 0.2s ease-out, background-color 0.1s;
-  touch-action: pan-y;
+  touch-action: pan-y; /* Важно для iOS: разрешаем только вертикальный скролл */
+  will-change: transform; /* Плавность анимации */
 }
 .card { 
   background: var(--paper); border: 1px solid var(--line); 
   border-radius: 14px; padding: 16px; position: relative; 
   margin-bottom: -1px; cursor: pointer;
 }
-.card:active { background: #f0e8dc; } /* Визуальный отклик при нажатии */
+.card:active { background: #f0e8dc; }
 /* --- END SWIPE --- */
 
 .card-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; }
