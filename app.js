@@ -138,6 +138,7 @@ function setupSwipe(wrapper, onDelete) {
   content.addEventListener('touchstart', e => {
     if (isOpen) return; 
     startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    currentX = startX;
     isSwiping = false; isScrolling = false; content.style.transition = 'none';
   }, {passive: true});
 
@@ -149,9 +150,15 @@ function setupSwipe(wrapper, onDelete) {
     let diffY = currentY - startY;
 
     if (!isSwiping) {
-      if (Math.abs(diffX) > 10 && Math.abs(diffX) > Math.abs(diffY)) { isSwiping = true; }
-      else if (Math.abs(diffY) > 10) { isScrolling = true; return; }
+      // Порог 20px и проверка, что движение по горизонтали явно преобладает
+      if (Math.abs(diffX) > 20 && Math.abs(diffX) > Math.abs(diffY) * 1.5) { 
+        isSwiping = true; 
+      } else if (Math.abs(diffY) > 15) { 
+        isScrolling = true; 
+        return; 
+      }
     }
+    
     if (isSwiping && diffX < 0) {
       e.preventDefault();
       content.style.transform = `translateX(${Math.max(-80, diffX)}px)`;
@@ -163,11 +170,22 @@ function setupSwipe(wrapper, onDelete) {
     if (isSwiping) {
       let diffX = currentX - startX;
       content.style.transition = 'transform 0.2s';
-      if (diffX < -40) { content.style.transform = 'translateX(-80px)'; isOpen = true; }
-      else { content.style.transform = 'translateX(0px)'; }
+      if (diffX < -40) { 
+        content.style.transform = 'translateX(-80px)'; 
+        isOpen = true; 
+      } else { 
+        content.style.transform = 'translateX(0px)'; 
+      }
       e.preventDefault();
     }
     setTimeout(() => { isSwiping = false; }, 50);
+  });
+
+  content.addEventListener('touchcancel', () => {
+    isSwiping = false;
+    isScrolling = false;
+    content.style.transition = 'transform 0.2s';
+    if (!isOpen) content.style.transform = 'translateX(0px)';
   });
 
   wrapper.querySelector('.swipe-delete').addEventListener('click', () => {
@@ -645,7 +663,6 @@ async function openPostEditor(id, opts = {}) {
       <div class="editor-view" data-view="text">
         <input id="post-title" class="title-input" type="text" placeholder="Заголовок поста" value="${escapeHtml(post.title)}">
         
-        <!-- Шаблоны перенесены сюда, наверх -->
         <label class="label" style="margin-top:12px">Шаблоны текста</label>
         <div class="template-bar">
           ${Object.keys(TEMPLATES).map(name => `<button class="template-btn" data-template="${name}">${name}</button>`).join('')}
