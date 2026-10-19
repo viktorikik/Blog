@@ -22,6 +22,8 @@ const SECTION_TITLES = {
   plan: 'Контент-план', posts: 'Все посты', ideas: 'Идеи',
   mission: 'Миссия', settings: 'Настройки',
 };
+const MONTH_NAMES = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
 // ============ DB ============
 const DB_NAME = 'eshe-odna-galochka';
@@ -74,6 +76,13 @@ function renderMarkdown(text) {
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
     .replace(/\n/g, '<br>');
 }
+function stripMarkdown(text) {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+}
 function insertMd(textarea, before, after, placeholder) {
   const s = textarea.selectionStart, e = textarea.selectionEnd;
   const sel = textarea.value.slice(s, e) || placeholder;
@@ -84,7 +93,6 @@ function insertMd(textarea, before, after, placeholder) {
 }
 function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
 
-// Сжатие изображения перед сохранением (чтобы не забить базу)
 async function processImage(file) {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -98,7 +106,7 @@ async function processImage(file) {
         canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', 0.7)); // Качество 70%
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
       };
       img.src = e.target.result;
     };
@@ -168,13 +176,16 @@ let pendingBackupCount = 0;
 let searchQuery = '';
 let filterChannel = 'all';
 let emailjsConfig = { service: '', template: '', publicKey: '' };
+let planViewMode = 'list'; // list | calendar
+let postsViewMode = 'list'; // list | kanban
+let currentCalendarDate = new Date(); // Для навигации по месяцам
 
 // ============ Init ============
 async function init() {
   db = await openDB();
   let settings = await dbGet(db, 'settings', 'main');
   if (!settings) {
-    settings = { id: 'main', lastBackupAt: null, pendingChanges: 0, emailjs: { service: '', template: '', publicKey: '' } };
+    settings = { id: 'main', lastBackupAt: null, pendingChanges: 0, emailjs: { service: '', template: '', publicKey: '' }, theme: 'light' };
     await dbPut(db, 'settings', settings);
   }
   pendingBackupCount = settings.pendingChanges || 0;
@@ -187,14 +198,21 @@ async function init() {
     }
   }
 
+  // Тема
+  if (settings.theme === 'dark') {
+    document.body.classList.add('dark');
+    document.getElementById('theme-toggle').textContent = '☀️';
+  }
+
   document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
   document.addEventListener('click', handleGlobalClick);
   document.getElementById('backup-badge').addEventListener('click', () => sendManualBackup());
   document.getElementById('restore-file').addEventListener('change', handleRestoreFile);
+  document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
-  // Setup filters
   setupFilters('plan');
   setupFilters('posts');
+  setupViewToggles();
 
   if ('serviceWorker' in navigator) {
     try { await navigator.serviceWorker.register('sw.js'); } catch (e) { /* ignore */ }
@@ -204,6 +222,14 @@ async function init() {
   if (mission) document.getElementById('mission-body').value = mission.body || '';
 
   switchTab('plan');
+}
+
+async function toggleTheme() {
+  const isDark = document.body.classList.toggle('dark');
+  document.getElementById('theme-toggle').textContent = isDark ? '☀️' : '🌙';
+  const settings = await dbGet(db, 'settings', 'main');
+  settings.theme = isDark ? 'dark' : 'light';
+  await dbPut(db, 'settings', settings);
 }
 
 function switchTab(tab) {
@@ -218,7 +244,7 @@ function switchTab(tab) {
   if (tab === 'settings') renderSettings();
 }
 
-// ============ Filters & Search ============
+// ============ Filters & Views ============
 function setupFilters(prefix) {
   const searchInput = document.getElementById(`search-${prefix}`);
   const chipsContainer = document.getElementById(`filter-${prefix}`);
@@ -231,7 +257,6 @@ function setupFilters(prefix) {
   }
 
   if (chipsContainer) {
-    // Add channel chips
     Object.entries(PLATFORMS).forEach(([k, v]) => {
       const btn = document.createElement('button');
       btn.className = 'filter-chip';
@@ -247,6 +272,38 @@ function setupFilters(prefix) {
       chip.classList.add('active');
       filterChannel = chip.dataset.filter;
       prefix === 'plan' ? renderPlan() : renderPosts();
+    });
+  }
+}
+
+function setupViewToggles() {
+  const planToggle = document.querySelector('#section-plan .view-toggle');
+  if (planToggle) {
+    planToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-view]');
+      if (!btn) return;
+      planToggle.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      planViewMode = btn.dataset.view === 'plan-calendar' ? 'calendar' : 'list';
+      document.getElementById('plan-filters').classList.toggle('hidden', planViewMode === 'calendar');
+      document.getElementById('plan-list').classList.toggle('hidden', planViewMode === 'calendar');
+      document.getElementById('plan-calendar').classList.toggle('hidden', planViewMode === 'list');
+      renderPlan();
+    });
+  }
+
+  const postsToggle = document.querySelector('#section-posts .view-toggle');
+  if (postsToggle) {
+    postsToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-view]');
+      if (!btn) return;
+      postsToggle.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      postsViewMode = btn.dataset.view === 'posts-kanban' ? 'kanban' : 'list';
+      document.getElementById('posts-filters').classList.toggle('hidden', postsViewMode === 'kanban');
+      document.getElementById('posts-list').classList.toggle('hidden', postsViewMode === 'kanban');
+      document.getElementById('posts-kanban').classList.toggle('hidden', postsViewMode === 'list');
+      renderPosts();
     });
   }
 }
@@ -277,6 +334,7 @@ async function handleGlobalClick(e) {
     case 'save-emailjs': saveEmailjsSettings(); break;
     case 'backup-now': sendManualBackup(); break;
     case 'restore-backup': document.getElementById('restore-file').click(); break;
+    case 'copy-text': copyPostText(btn.dataset.platform); break;
   }
 }
 
@@ -292,12 +350,12 @@ async function executeDeleteIdea(id) {
   renderIdeas();
 }
 
-// ============ Post card ============
+// ============ Post Card ============
 function buildPostCard(post, mode) {
   const status = POST_STATUSES[post.status] || POST_STATUSES.draft;
   const channelPills = (post.channels || []).map(ch => {
     const p = PLATFORMS[ch];
-    return p ? `<span class="channel-pill" style="background:${p.color}; color: ${ch==='max'||ch==='zen'?'white':'var(--graphite)'}">${p.name}</span>` : '';
+    return p ? `<span class="channel-pill" style="background:${p.color}; color: ${ch==='max'||ch==='zen'?'white':'#292724'}">${p.name}</span>` : '';
   }).join('');
   
   const tagsHtml = (post.tags || []).length ? `<div class="tags">${post.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>` : '';
@@ -336,8 +394,13 @@ function buildPostCard(post, mode) {
     </div>`;
 }
 
-// ============ Plan view ============
+// ============ Plan View ============
 async function renderPlan() {
+  if (planViewMode === 'calendar') {
+    renderCalendar();
+    return;
+  }
+  
   const all = await dbGetAll(db, 'posts');
   let plans = all.filter(p => p.publishDate && matchesFilter(p));
   const t = today();
@@ -357,8 +420,88 @@ async function renderPlan() {
   });
 }
 
-// ============ Posts view ============
+// ============ Calendar Render ============
+async function renderCalendar() {
+  const all = await dbGetAll(db, 'posts');
+  const plans = all.filter(p => p.publishDate);
+  
+  const year = currentCalendarDate.getFullYear();
+  const month = currentCalendarDate.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  
+  // День недели первого дня (0 - Вс, 1 - Пн). Переделаем в 0 - Пн, 6 - Вс
+  let startDayOfWeek = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+  const daysInMonth = lastDay.getDate();
+  
+  let html = `
+    <div class="cal-header">
+      <button class="cal-nav-btn" id="cal-prev">←</button>
+      <span>${MONTH_NAMES[month]} ${year}</span>
+      <button class="cal-nav-btn" id="cal-next">→</button>
+    </div>
+    <div class="cal-grid">
+  `;
+  
+  DAY_NAMES.forEach(d => html += `<div class="cal-day-name">${d}</div>`);
+  
+  for (let i = 0; i < startDayOfWeek; i++) {
+    html += `<div class="cal-day" style="opacity:0.3"></div>`;
+  }
+  
+  const todayStr = today();
+  let selectedDateStr = null;
+  let selectedDayPosts = [];
+  
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const dayPosts = plans.filter(p => p.publishDate === dateStr);
+    const isToday = dateStr === todayStr;
+    
+    // Dots for channels
+    const dots = dayPosts.map(p => {
+      const ch = p.channels && p.channels.length > 0 ? p.channels[0] : 'max';
+      return `<div class="cal-dot" style="background:${PLATFORMS[ch]?.color || '#292724'}"></div>`;
+    }).slice(0, 4).join(''); // max 4 dots
+    
+    html += `<div class="cal-day ${isToday?'today':''} ${dayPosts.length?'has-posts':''}" data-date="${dateStr}">
+      ${d}
+      <div class="cal-dots">${dots}</div>
+    </div>`;
+  }
+  
+  html += `</div><div id="cal-day-details" class="cal-day-posts"></div>`;
+  document.getElementById('plan-calendar').innerHTML = html;
+  
+  document.getElementById('cal-prev').onclick = () => { currentCalendarDate.setMonth(currentCalendarDate.getMonth() - 1); renderCalendar(); };
+  document.getElementById('cal-next').onclick = () => { currentCalendarDate.setMonth(currentCalendarDate.getMonth() + 1); renderCalendar(); };
+  
+  // Клик по дню
+  document.querySelectorAll('.cal-day[data-date]').forEach(cell => {
+    cell.onclick = () => {
+      const date = cell.dataset.date;
+      const posts = plans.filter(p => p.publishDate === date);
+      if (!posts.length) return;
+      
+      const detailsEl = document.getElementById('cal-day-details');
+      detailsEl.innerHTML = `<h3 style="margin-bottom:12px;font-size:1rem">Посты на ${fmtDate(new Date(date).getTime())}</h3>` +
+        posts.map(p => buildPostCard(p, 'plan')).join('');
+        
+      detailsEl.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
+        const id = wrapper.querySelector('.swipe-content').dataset.id;
+        setupSwipe(wrapper, () => { if (confirm('Удалить этот пост?')) executeDeletePost(id); });
+      });
+    };
+  });
+}
+
+// ============ Posts View ============
 async function renderPosts() {
+  if (postsViewMode === 'kanban') {
+    renderKanban();
+    return;
+  }
+
   const posts = await dbGetAll(db, 'posts');
   let filtered = posts.filter(matchesFilter);
   filtered.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -372,7 +515,69 @@ async function renderPosts() {
   });
 }
 
-// ============ Post editor ============
+// ============ Kanban Render ============
+async function renderKanban() {
+  const posts = await dbGetAll(db, 'posts');
+  // На канбане мы не фильтруем по каналам, чтобы видеть всю картину, но поиск работает
+  const filtered = posts.filter(p => {
+    if (!searchQuery) return true;
+    return ((p.title || '') + ' ' + (p.body || '')).toLowerCase().includes(searchQuery);
+  });
+
+  const columns = ['draft', 'review', 'ready', 'published'];
+  const kanbanEl = document.getElementById('posts-kanban');
+  
+  let html = '';
+  columns.forEach(statusKey => {
+    const statusInfo = POST_STATUSES[statusKey];
+    const colPosts = filtered.filter(p => p.status === statusKey).sort((a,b) => b.updatedAt - a.updatedAt);
+    
+    html += `
+      <div class="kanban-col">
+        <div class="kanban-col-header">
+          <span>${statusInfo.label}</span>
+          <span class="kanban-count">${colPosts.length}</span>
+        </div>
+        <div class="kanban-cards">
+          ${colPosts.map(p => buildPostCard(p, 'kanban')).join('')}
+        </div>
+      </div>
+    `;
+  });
+  
+  kanbanEl.innerHTML = html;
+  
+  kanbanEl.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
+    const id = wrapper.querySelector('.swipe-content').dataset.id;
+    setupSwipe(wrapper, () => { if (confirm('Удалить этот пост?')) executeDeletePost(id); });
+  });
+}
+
+// ============ Copy logic ============
+function copyPostText(platform) {
+  const title = document.querySelector('#post-title').value.trim();
+  const body = document.querySelector('#post-body').value;
+  let textToCopy = '';
+  
+  if (platform === 'telegram' || platform === 'vk') {
+    // Оставляем Markdown для Telegram, но убираем для VK (обычно там не рендерится)
+    textToCopy = platform === 'telegram' ? `${title ? title+'\n\n' : ''}${body}` : stripMarkdown(`${title ? title+'\n\n' : ''}${body}`);
+  } else if (platform === 'zen') {
+    // Дзен: только текст, заголовок отдельно (вставляется в поле заголовка)
+    textToCopy = stripMarkdown(body);
+  } else {
+    // Insta, MAX: просто текст
+    textToCopy = stripMarkdown(`${title ? title+'\n\n' : ''}${body}`);
+  }
+  
+  navigator.clipboard.writeText(textToCopy).then(() => {
+    toast(`Скопировано для ${PLATFORMS[platform].name} ✓`);
+  }).catch(err => {
+    toast('Ошибка копирования');
+  });
+}
+
+// ============ Post Editor ============
 async function openPostEditor(id, opts = {}) {
   const isNew = id === 'new';
   let post;
@@ -418,7 +623,7 @@ async function openPostEditor(id, opts = {}) {
       <div class="editor-view" data-view="text">
         <input id="post-title" class="title-input" type="text" placeholder="Заголовок поста" value="${escapeHtml(post.title)}">
         
-        <label class="label">Обложка (для Instagram и Дзен)</label>
+        <label class="label">Обложка</label>
         <div class="image-upload-box" id="upload-box">
           ${currentImage ? `
             <div class="image-preview-wrap">
@@ -446,7 +651,7 @@ async function openPostEditor(id, opts = {}) {
           ${Object.entries(POST_STATUSES).map(([k, v]) => `<option value="${k}" ${post.status === k ? 'selected' : ''}>${v.label}</option>`).join('')}
         </select>
 
-        <label class="label">Дата публикации (для плана)</label>
+        <label class="label">Дата публикации</label>
         <input id="post-date" type="date" value="${post.publishDate || ''}">
 
         <label class="label">Каналы</label>
@@ -460,10 +665,10 @@ async function openPostEditor(id, opts = {}) {
           ${ideas.map(i => `<option value="${i.id}" ${post.ideaId === i.id ? 'selected' : ''}>${escapeHtml(i.title)}</option>`).join('')}
         </select>
 
-        <label class="label">Теги (через запятую)</label>
+        <label class="label">Теги</label>
         <input id="post-tags" type="text" value="${escapeHtml((post.tags || []).join(', '))}" placeholder="лайфстайл, техника">
 
-        <label class="label">Серия (направленная связь)</label>
+        <label class="label">Серия</label>
         <div class="series-row">
           <input id="series-name" type="text" placeholder="Название" value="${escapeHtml(post.seriesName || '')}">
           <input id="series-part" type="number" min="1" placeholder="Часть" value="${post.seriesPart || ''}">
@@ -670,13 +875,17 @@ function buildPreview(platform, title, body, series, relatedTitles, image) {
   const counter = `<div class="counter ${over ? 'over' : ''}">${len} / ${p.maxLength}${overHash ? ` · хэштегов ${hashtags}/${p.hashtagLimit}` : ''}</div>`;
   const md = renderMarkdown(body);
   const seriesLine = series.name ? `<div class="pf-line">📚 Серия: ${escapeHtml(series.name)}${series.part ? ` · ч. ${series.part}${series.total ? `/${series.total}` : ''}` : ''}</div>` : '';
-  const relatedLine = relatedTitles.length ? `<div class="pf-line">🔗 Связанные посты: ${relatedTitles.map(t => escapeHtml(t)).join(', ')}</div>` : '';
+  const relatedLine = relatedTitles.length ? `<div class="pf-line">🔗 Связанные: ${relatedTitles.map(t => escapeHtml(t)).join(', ')}</div>` : '';
   const footer = (seriesLine || relatedLine) ? `<div class="preview-footer">${seriesLine}${relatedLine}</div>` : '';
   
   const imgHtml = image ? `<img src="${image}" class="ig-image">` : `<div class="ig-image-placeholder" style="background:${p.color}22">Нет фото</div>`;
+  
+  // Copy button
+  const copyBtn = `<button class="copy-btn" data-action="copy-text" data-platform="${platform}">Копировать</button>`;
 
   if (platform === 'instagram') return `
-    <div class="ig-preview">
+    ${copyBtn}
+    <div class="ig-preview" style="margin-top: 30px">
       <div class="ig-header">
         <div class="ig-avatar" style="background:${p.color}">Е</div><div class="ig-username">eshe.odna.galochka</div>
       </div>
@@ -686,7 +895,8 @@ function buildPreview(platform, title, body, series, relatedTitles, image) {
     </div>`;
 
   if (platform === 'telegram' || platform === 'max') return `
-    <div class="tg-preview">
+    ${copyBtn}
+    <div class="tg-preview" style="margin-top: 30px">
       <div class="tg-bubble" style="border-left-color:${p.color}">
         ${title ? `<div class="tg-title">${escapeHtml(title)}</div>` : ''}<div class="tg-text">${md}</div>
       </div>
@@ -694,13 +904,15 @@ function buildPreview(platform, title, body, series, relatedTitles, image) {
     </div>`;
 
   if (platform === 'vk') return `
-    <div class="vk-preview">
+    ${copyBtn}
+    <div class="vk-preview" style="margin-top: 30px">
       <div class="vk-header"><div class="vk-avatar" style="background:${p.color}">Е</div><div><strong>Ещё одна галочка</strong><br><small style="color:var(--muted)">только что</small></div></div>
       <div class="vk-text">${md}</div>${footer}${counter}
     </div>`;
 
   if (platform === 'zen') return `
-    <div class="zen-preview">
+    ${copyBtn}
+    <div class="zen-preview" style="margin-top: 30px">
       <h2 class="zen-title">${escapeHtml(title) || 'Заголовок публикации'}</h2>
       ${image ? `<img src="${image}" style="width:100%;border-radius:10px;margin-bottom:12px;">` : ''}
       <div class="zen-text">${md}</div>${footer}${counter}
@@ -843,7 +1055,6 @@ async function markChange() {
   pendingBackupCount = settings.pendingChanges;
   updateBackupBadge();
   
-  // Триггерим автобэкап, если настроено
   if (emailjsConfig.service && emailjsConfig.template && emailjsConfig.publicKey) {
     triggerAutoBackup();
   }
@@ -867,7 +1078,6 @@ async function triggerAutoBackup() {
     pendingBackupCount = 0;
     updateBackupBadge();
     if (currentTab === 'settings') renderSettings();
-    console.log('Автобэкап отправлен');
   } catch (e) {
     console.error('Ошибка автобэкапа:', e);
     toast('Не удалось отправить бэкап. Проверьте настройки.');
@@ -876,7 +1086,7 @@ async function triggerAutoBackup() {
 
 function updateBackupBadge() {
   const badge = document.getElementById('backup-badge');
-  if (pendingBackupCount > 0 && !emailjsConfig.publicKey) { // Показываем бейдж только если нет автобэкапа
+  if (pendingBackupCount > 0 && !emailjsConfig.publicKey) {
     badge.classList.remove('hidden');
     document.getElementById('backup-count').textContent = pendingBackupCount;
   } else {
