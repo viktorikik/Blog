@@ -98,12 +98,14 @@ function setupSwipe(wrapper, onDelete) {
   const content = wrapper.querySelector('.swipe-content');
   let startX = 0, startY = 0, currentX = 0;
   let isDragging = false;
+  let isSwiping = false; // Защита от случайного клика
   const threshold = 60;
 
   content.addEventListener('touchstart', e => {
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     isDragging = true;
+    isSwiping = false;
     content.style.transition = 'none';
   }, {passive: true});
 
@@ -113,14 +115,15 @@ function setupSwipe(wrapper, onDelete) {
     let diffX = currentX - startX;
     let diffY = e.touches[0].clientY - startY;
 
-    // Если движение больше по вертикали, не мешаем скроллу
+    if (Math.abs(diffX) > 10) isSwiping = true;
+
     if (Math.abs(diffY) > Math.abs(diffX) && content.style.transform === 'translateX(0px)') {
       isDragging = false;
       return;
     }
 
     if (diffX < 0) {
-      if (Math.abs(diffX) > 10) e.preventDefault(); // Блокируем скролл при свайпе
+      if (Math.abs(diffX) > 10) e.preventDefault();
       let move = Math.max(-80, diffX);
       content.style.transform = `translateX(${move}px)`;
     }
@@ -140,8 +143,16 @@ function setupSwipe(wrapper, onDelete) {
     startX = 0; currentX = 0;
   });
 
-  // Клик по контенту, если он открыт, чтобы закрыть
+  // Клик по контенту
   content.addEventListener('click', (e) => {
+    // Если был свайп, отменяем клик
+    if (isSwiping) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    
+    // Если карточка открыта для удаления, клик её закрывает
     if (content.style.transform === 'translateX(-80px)') {
       e.preventDefault();
       e.stopPropagation();
@@ -208,9 +219,9 @@ async function handleGlobalClick(e) {
   switch (action) {
     case 'new-plan': openPostEditor('new', { prefillDate: true, openTab: 'meta' }); break;
     case 'new-post': openPostEditor('new', { openTab: 'text' }); break;
-    case 'edit-post': openPostEditor(id); break;
+    case 'edit-post': openPostEditor(id); break; // ВОЗВРАЩЕНО
     case 'new-idea': openIdeaEditor(null); break;
-    case 'edit-idea': openIdeaEditor(id); break;
+    case 'edit-idea': openIdeaEditor(id); break; // ВОЗВРАЩЕНО
     case 'save-mission': saveMission(); break;
     case 'backup-now': sendBackup(); break;
     case 'restore-backup': document.getElementById('restore-file').click(); break;
@@ -254,6 +265,7 @@ function buildPostCard(post, mode) {
     metaLine = `<div class="card-meta">Изменён ${fmtDateTime(post.updatedAt)}${post.publishDate ? ` · 📅 ${fmtDate(new Date(post.publishDate).getTime())}` : ''}</div>`;
   }
 
+  // data-action="edit-post" навешан на весь swipe-content
   return `
     <div class="swipe-wrapper">
       <div class="swipe-actions">
@@ -262,7 +274,7 @@ function buildPostCard(post, mode) {
           Удалить
         </button>
       </div>
-      <div class="swipe-content card">
+      <div class="swipe-content card" data-action="edit-post" data-id="${post.id}">
         <div class="card-row">
           ${channelPills}
           <span class="status-pill" style="background:${status.color}">${status.label}</span>
@@ -273,9 +285,6 @@ function buildPostCard(post, mode) {
         ${tagsHtml}
         ${metaLine}
         ${relatedHtml ? `<div style="margin-top:6px">${relatedHtml}</div>` : ''}
-        <div class="card-actions">
-          <button data-action="edit-post" data-id="${post.id}" title="Открыть">✎</button>
-        </div>
       </div>
     </div>`;
 }
@@ -297,9 +306,8 @@ async function renderPlan() {
   
   el.innerHTML = plans.map(p => buildPostCard(p, 'plan')).join('');
   
-  // Привязываем свайп
   el.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
-    const id = wrapper.querySelector('[data-id]').dataset.id;
+    const id = wrapper.querySelector('.swipe-content').dataset.id;
     setupSwipe(wrapper, () => {
       if (confirm('Удалить этот пост?')) executeDeletePost(id);
     });
@@ -316,7 +324,7 @@ async function renderPosts() {
   el.innerHTML = posts.map(p => buildPostCard(p, 'posts')).join('');
   
   el.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
-    const id = wrapper.querySelector('[data-id]').dataset.id;
+    const id = wrapper.querySelector('.swipe-content').dataset.id;
     setupSwipe(wrapper, () => {
       if (confirm('Удалить этот пост?')) executeDeletePost(id);
     });
@@ -471,7 +479,8 @@ async function openPostEditor(id, opts = {}) {
       return `<span class="related-chip">${escapeHtml(title)}<button data-remove="${id}">×</button></span>`;
     }).join('');
     el.querySelectorAll('[data-remove]').forEach(b => {
-      b.onclick = () => {
+      b.onclick = (e) => {
+        e.stopPropagation(); // Чтобы не сработал клик по другим элементам
         selectedRelatedIds = selectedRelatedIds.filter(x => x !== b.dataset.remove);
         renderChips();
       };
@@ -759,6 +768,7 @@ async function renderIdeas() {
   
   list.innerHTML = ideas.map(i => {
     const st = IDEA_STATUSES[i.status] || IDEA_STATUSES.new;
+    // data-action="edit-idea" навешан на весь swipe-content
     return `
       <div class="swipe-wrapper">
         <div class="swipe-actions">
@@ -767,23 +777,19 @@ async function renderIdeas() {
             Удалить
           </button>
         </div>
-        <div class="swipe-content card">
+        <div class="swipe-content card" data-action="edit-idea" data-id="${i.id}">
           <div class="card-row">
             <span class="status-pill" style="background:${st.color}">${st.label}</span>
           </div>
           <h3 class="card-title">${escapeHtml(i.title)}</h3>
           ${i.description ? `<p class="card-body">${escapeHtml(i.description)}</p>` : ''}
           ${i.tags ? `<div class="tags">${i.tags.split(',').map(t => `<span class="tag">${escapeHtml(t.trim())}</span>`).join('')}</div>` : ''}
-          <div class="card-actions">
-            <button data-action="edit-idea" data-id="${i.id}" title="Изменить">✎</button>
-          </div>
         </div>
       </div>`;
   }).join('');
 
-  // Привязываем свайп
   list.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
-    const id = wrapper.querySelector('[data-id]').dataset.id;
+    const id = wrapper.querySelector('.swipe-content').dataset.id;
     setupSwipe(wrapper, () => {
       if (confirm('Удалить эту идею?')) executeDeleteIdea(id);
     });
