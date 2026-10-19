@@ -53,13 +53,7 @@ function dbGet(db, store, key) { return new Promise((res, rej) => { const r = db
 function dbPut(db, store, value) { return new Promise((res, rej) => { const r = dbStore(db, store, 'readwrite').put(value); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
 function dbDelete(db, store, key) { return new Promise((res, rej) => { const r = dbStore(db, store, 'readwrite').delete(key); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }); }
 function dbGetAll(db, store) { return new Promise((res, rej) => { const r = dbStore(db, store).getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
-function dbGetVersions(db, postId) {
-  return new Promise((res, rej) => {
-    const r = dbStore(db, 'post_versions').index('postId').getAll(postId);
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
-}
+function dbGetVersions(db, postId) { return new Promise((res, rej) => { const r = dbStore(db, 'post_versions').index('postId').getAll(postId); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
 
 // ============ Utils ============
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -68,11 +62,8 @@ function fmtDateTime(ts) { return new Date(ts).toLocaleString('ru-RU', { day: '2
 function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function today() { return new Date().toISOString().slice(0, 10); }
 function toast(msg) {
-  const t = document.createElement('div');
-  t.className = 'toast';
-  t.textContent = msg;
-  document.body.appendChild(t);
-  requestAnimationFrame(() => t.classList.add('show'));
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t); requestAnimationFrame(() => t.classList.add('show'));
   setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 2000);
 }
 function renderMarkdown(text) {
@@ -93,92 +84,80 @@ function insertMd(textarea, before, after, placeholder) {
 }
 function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
 
+// Сжатие изображения перед сохранением (чтобы не забить базу)
+async function processImage(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxW = 800;
+        let w = img.width, h = img.height;
+        if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.7)); // Качество 70%
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 // ============ Swipe to delete ============
 function setupSwipe(wrapper, onDelete) {
   const content = wrapper.querySelector('.swipe-content');
   let startX = 0, startY = 0, currentX = 0;
-  let isSwiping = false;
-  let isScrolling = false;
-  let isOpen = false;
+  let isSwiping = false, isScrolling = false, isOpen = false;
 
-  // Перехватываем клик, если карточка открыта или если был свайп
   content.addEventListener('click', (e) => {
     if (isOpen) {
-      e.preventDefault();
-      e.stopPropagation();
-      content.style.transition = 'transform 0.2s';
-      content.style.transform = 'translateX(0px)';
-      isOpen = false;
+      e.preventDefault(); e.stopPropagation();
+      content.style.transition = 'transform 0.2s'; content.style.transform = 'translateX(0px)'; isOpen = false;
     } else if (isSwiping) {
-      // Блокируем клик, если только что был свайп
-      e.preventDefault();
-      e.stopPropagation();
+      e.preventDefault(); e.stopPropagation();
     }
-    // Если ничего не открыто и свайпа не было, клик спокойно уходит дальше в handleGlobalClick
   });
 
   content.addEventListener('touchstart', e => {
     if (isOpen) return; 
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    isSwiping = false;
-    isScrolling = false;
-    content.style.transition = 'none';
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    isSwiping = false; isScrolling = false; content.style.transition = 'none';
   }, {passive: true});
 
   content.addEventListener('touchmove', e => {
     if (isOpen || isScrolling) return;
-    
     currentX = e.touches[0].clientX;
     let currentY = e.touches[0].clientY;
     let diffX = currentX - startX;
     let diffY = currentY - startY;
 
-    // Определяем намерение пользователя
     if (!isSwiping) {
-      // Свайп срабатывает, только если движение по горизонтали больше 10px И больше, чем по вертикали
-      if (Math.abs(diffX) > 10 && Math.abs(diffX) > Math.abs(diffY)) {
-        isSwiping = true;
-      } else if (Math.abs(diffY) > 10) {
-        // Если движение по вертикали больше — это скролл, игнорируем
-        isScrolling = true;
-        return;
-      }
+      if (Math.abs(diffX) > 10 && Math.abs(diffX) > Math.abs(diffY)) { isSwiping = true; }
+      else if (Math.abs(diffY) > 10) { isScrolling = true; return; }
     }
-
     if (isSwiping && diffX < 0) {
       e.preventDefault();
-      let move = Math.max(-80, diffX);
-      content.style.transform = `translateX(${move}px)`;
+      content.style.transform = `translateX(${Math.max(-80, diffX)}px)`;
     }
   }, {passive: false});
 
   content.addEventListener('touchend', (e) => {
     if (isOpen || isScrolling) return;
-
     if (isSwiping) {
       let diffX = currentX - startX;
       content.style.transition = 'transform 0.2s';
-      
-      if (diffX < -40) {
-        content.style.transform = 'translateX(-80px)';
-        isOpen = true;
-      } else {
-        content.style.transform = 'translateX(0px)';
-      }
-      // Предотвращаем синтетический клик после свайпа
+      if (diffX < -40) { content.style.transform = 'translateX(-80px)'; isOpen = true; }
+      else { content.style.transform = 'translateX(0px)'; }
       e.preventDefault();
     }
-    
-    // Сбрасываем флаг с небольшой задержкой, чтобы клик не сработал случайно
     setTimeout(() => { isSwiping = false; }, 50);
   });
 
-  // Кнопка удаления
   wrapper.querySelector('.swipe-delete').addEventListener('click', () => {
-    content.style.transform = 'translateX(0px)';
-    isOpen = false;
-    onDelete();
+    content.style.transform = 'translateX(0px)'; isOpen = false; onDelete();
   });
 }
 
@@ -186,24 +165,36 @@ function setupSwipe(wrapper, onDelete) {
 let db;
 let currentTab = 'plan';
 let pendingBackupCount = 0;
+let searchQuery = '';
+let filterChannel = 'all';
+let emailjsConfig = { service: '', template: '', publicKey: '' };
 
 // ============ Init ============
 async function init() {
   db = await openDB();
   let settings = await dbGet(db, 'settings', 'main');
   if (!settings) {
-    settings = { id: 'main', lastBackupAt: null, pendingChanges: 0 };
+    settings = { id: 'main', lastBackupAt: null, pendingChanges: 0, emailjs: { service: '', template: '', publicKey: '' } };
     await dbPut(db, 'settings', settings);
   }
   pendingBackupCount = settings.pendingChanges || 0;
   updateBackupBadge();
+  
+  if (settings.emailjs) {
+    emailjsConfig = settings.emailjs;
+    if (emailjsConfig.publicKey && typeof emailjs !== 'undefined') {
+      emailjs.init({ publicKey: emailjsConfig.publicKey });
+    }
+  }
 
-  document.querySelectorAll('.nav-btn').forEach(b => {
-    b.addEventListener('click', () => switchTab(b.dataset.tab));
-  });
+  document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
   document.addEventListener('click', handleGlobalClick);
-  document.getElementById('backup-badge').addEventListener('click', sendBackup);
+  document.getElementById('backup-badge').addEventListener('click', () => sendManualBackup());
   document.getElementById('restore-file').addEventListener('change', handleRestoreFile);
+
+  // Setup filters
+  setupFilters('plan');
+  setupFilters('posts');
 
   if ('serviceWorker' in navigator) {
     try { await navigator.serviceWorker.register('sw.js'); } catch (e) { /* ignore */ }
@@ -220,10 +211,55 @@ function switchTab(tab) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === `section-${tab}`));
   document.getElementById('section-title').textContent = SECTION_TITLES[tab];
+  
   if (tab === 'plan') renderPlan();
   if (tab === 'posts') renderPosts();
   if (tab === 'ideas') renderIdeas();
   if (tab === 'settings') renderSettings();
+}
+
+// ============ Filters & Search ============
+function setupFilters(prefix) {
+  const searchInput = document.getElementById(`search-${prefix}`);
+  const chipsContainer = document.getElementById(`filter-${prefix}`);
+  
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      searchQuery = e.target.value.toLowerCase();
+      prefix === 'plan' ? renderPlan() : renderPosts();
+    });
+  }
+
+  if (chipsContainer) {
+    // Add channel chips
+    Object.entries(PLATFORMS).forEach(([k, v]) => {
+      const btn = document.createElement('button');
+      btn.className = 'filter-chip';
+      btn.dataset.filter = k;
+      btn.textContent = v.name;
+      chipsContainer.appendChild(btn);
+    });
+
+    chipsContainer.addEventListener('click', (e) => {
+      const chip = e.target.closest('.filter-chip');
+      if (!chip) return;
+      chipsContainer.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      filterChannel = chip.dataset.filter;
+      prefix === 'plan' ? renderPlan() : renderPosts();
+    });
+  }
+}
+
+function matchesFilter(post) {
+  if (filterChannel !== 'all') {
+    if (!post.channels || !post.channels.includes(filterChannel)) return false;
+  }
+  if (searchQuery) {
+    const textToSearch = (post.title || '') + ' ' + (post.body || '');
+    if (!textToSearch.toLowerCase().includes(searchQuery)) return false;
+  }
+  return true;
 }
 
 // ============ Global click ============
@@ -238,7 +274,8 @@ async function handleGlobalClick(e) {
     case 'new-idea': openIdeaEditor(null); break;
     case 'edit-idea': openIdeaEditor(id); break;
     case 'save-mission': saveMission(); break;
-    case 'backup-now': sendBackup(); break;
+    case 'save-emailjs': saveEmailjsSettings(); break;
+    case 'backup-now': sendManualBackup(); break;
     case 'restore-backup': document.getElementById('restore-file').click(); break;
   }
 }
@@ -263,12 +300,8 @@ function buildPostCard(post, mode) {
     return p ? `<span class="channel-pill" style="background:${p.color}; color: ${ch==='max'||ch==='zen'?'white':'var(--graphite)'}">${p.name}</span>` : '';
   }).join('');
   
-  const tagsHtml = (post.tags || []).length
-    ? `<div class="tags">${post.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>`
-    : '';
-  const seriesHtml = post.seriesName
-    ? `<div class="card-series">📚 ${escapeHtml(post.seriesName)}${post.seriesPart ? ` · ч. ${post.seriesPart}${post.seriesTotal ? `/${post.seriesTotal}` : ''}` : ''}</div>`
-    : '';
+  const tagsHtml = (post.tags || []).length ? `<div class="tags">${post.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>` : '';
+  const seriesHtml = post.seriesName ? `<div class="card-series">📚 ${escapeHtml(post.seriesName)}${post.seriesPart ? ` · ч. ${post.seriesPart}${post.seriesTotal ? `/${post.seriesTotal}` : ''}` : ''}</div>` : '';
   const relatedCount = (post.relatedPostIds || []).length;
   const relatedHtml = relatedCount ? `<span class="card-related">🔗 ${relatedCount} ${relatedCount === 1 ? 'связь' : 'связей'}</span>` : '';
   const snippet = (post.body || '').replace(/[#*_`\[\]]/g, '').slice(0, 120);
@@ -280,16 +313,15 @@ function buildPostCard(post, mode) {
     metaLine = `<div class="card-meta">Изменён ${fmtDateTime(post.updatedAt)}${post.publishDate ? ` · 📅 ${fmtDate(new Date(post.publishDate).getTime())}` : ''}</div>`;
   }
 
-  // data-action="edit-post" навешан на весь swipe-content
+  const coverHtml = post.coverImage ? `<img src="${post.coverImage}" class="card-cover" alt="">` : '';
+
   return `
     <div class="swipe-wrapper">
       <div class="swipe-actions">
-        <button class="swipe-delete">
-          <span style="font-size:1.2rem">🗑</span>
-          Удалить
-        </button>
+        <button class="swipe-delete"><span style="font-size:1.2rem">🗑</span>Удалить</button>
       </div>
       <div class="swipe-content card" data-action="edit-post" data-id="${post.id}">
+        ${coverHtml}
         <div class="card-row">
           ${channelPills}
           <span class="status-pill" style="background:${status.color}">${status.label}</span>
@@ -307,42 +339,36 @@ function buildPostCard(post, mode) {
 // ============ Plan view ============
 async function renderPlan() {
   const all = await dbGetAll(db, 'posts');
-  const plans = all.filter(p => p.publishDate);
+  let plans = all.filter(p => p.publishDate && matchesFilter(p));
   const t = today();
   plans.sort((a, b) => {
-    const aPast = a.publishDate < t;
-    const bPast = b.publishDate < t;
+    const aPast = a.publishDate < t, bPast = b.publishDate < t;
     if (aPast !== bPast) return aPast ? 1 : -1;
     if (aPast) return b.publishDate.localeCompare(a.publishDate);
     return a.publishDate.localeCompare(b.publishDate);
   });
   const el = document.getElementById('plan-list');
-  if (!plans.length) { el.innerHTML = '<p class="empty">План пуст. Запланируйте первый пост или добавьте дату существующему.</p>'; return; }
+  if (!plans.length) { el.innerHTML = '<p class="empty">Ничего не найдено или план пуст.</p>'; return; }
   
   el.innerHTML = plans.map(p => buildPostCard(p, 'plan')).join('');
-  
   el.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
     const id = wrapper.querySelector('.swipe-content').dataset.id;
-    setupSwipe(wrapper, () => {
-      if (confirm('Удалить этот пост?')) executeDeletePost(id);
-    });
+    setupSwipe(wrapper, () => { if (confirm('Удалить этот пост?')) executeDeletePost(id); });
   });
 }
 
 // ============ Posts view ============
 async function renderPosts() {
   const posts = await dbGetAll(db, 'posts');
-  posts.sort((a, b) => b.updatedAt - a.updatedAt);
+  let filtered = posts.filter(matchesFilter);
+  filtered.sort((a, b) => b.updatedAt - a.updatedAt);
   const el = document.getElementById('posts-list');
-  if (!posts.length) { el.innerHTML = '<p class="empty">Постов пока нет. Начните с нового.</p>'; return; }
+  if (!filtered.length) { el.innerHTML = '<p class="empty">Ничего не найдено.</p>'; return; }
   
-  el.innerHTML = posts.map(p => buildPostCard(p, 'posts')).join('');
-  
+  el.innerHTML = filtered.map(p => buildPostCard(p, 'posts')).join('');
   el.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
     const id = wrapper.querySelector('.swipe-content').dataset.id;
-    setupSwipe(wrapper, () => {
-      if (confirm('Удалить этот пост?')) executeDeletePost(id);
-    });
+    setupSwipe(wrapper, () => { if (confirm('Удалить этот пост?')) executeDeletePost(id); });
   });
 }
 
@@ -352,11 +378,9 @@ async function openPostEditor(id, opts = {}) {
   let post;
   if (isNew) {
     post = {
-      id: uid(), title: '', body: '', status: 'draft',
-      publishDate: opts.prefillDate ? today() : '',
+      id: uid(), title: '', body: '', status: 'draft', publishDate: opts.prefillDate ? today() : '',
       channels: [], tags: [], seriesName: '', seriesPart: null, seriesTotal: null,
-      relatedPostIds: [], ideaId: null,
-      createdAt: Date.now(), updatedAt: Date.now(),
+      relatedPostIds: [], ideaId: null, coverImage: '', createdAt: Date.now(), updatedAt: Date.now(),
     };
   } else {
     post = await dbGet(db, 'posts', id);
@@ -372,6 +396,7 @@ async function openPostEditor(id, opts = {}) {
   let selectedRelatedIds = [...(post.relatedPostIds || [])];
   let selectedChannels = [...(post.channels || [])];
   let currentPlatform = 'telegram';
+  let currentImage = post.coverImage || '';
 
   const root = document.getElementById('modal-root');
   root.innerHTML = `
@@ -392,6 +417,19 @@ async function openPostEditor(id, opts = {}) {
 
       <div class="editor-view" data-view="text">
         <input id="post-title" class="title-input" type="text" placeholder="Заголовок поста" value="${escapeHtml(post.title)}">
+        
+        <label class="label">Обложка (для Instagram и Дзен)</label>
+        <div class="image-upload-box" id="upload-box">
+          ${currentImage ? `
+            <div class="image-preview-wrap">
+              <img src="${currentImage}" class="image-preview-thumb">
+              <button class="image-remove" id="remove-img">×</button>
+            </div>
+          ` : 'Нажмите, чтобы выбрать фото'}
+        </div>
+        <input type="file" id="post-image-input" accept="image/*" hidden>
+
+        <label class="label" style="margin-top:16px">Текст поста</label>
         <div class="format-bar">
           <button data-md="bold" title="Жирный"><b>B</b></button>
           <button data-md="italic" title="Курсив"><i>I</i></button>
@@ -399,7 +437,7 @@ async function openPostEditor(id, opts = {}) {
           <button data-md="list" title="Список">≡</button>
           <button data-md="h2" title="Подзаголовок">H2</button>
         </div>
-        <textarea id="post-body" class="body-textarea" placeholder="Текст поста в Markdown. Хэштеги — в конце через #.">${escapeHtml(post.body)}</textarea>
+        <textarea id="post-body" class="body-textarea" placeholder="Текст поста в Markdown...">${escapeHtml(post.body)}</textarea>
       </div>
 
       <div class="editor-view hidden" data-view="meta">
@@ -423,18 +461,18 @@ async function openPostEditor(id, opts = {}) {
         </select>
 
         <label class="label">Теги (через запятую)</label>
-        <input id="post-tags" type="text" value="${escapeHtml((post.tags || []).join(', '))}" placeholder="лайфстайл, техника, личное">
+        <input id="post-tags" type="text" value="${escapeHtml((post.tags || []).join(', '))}" placeholder="лайфстайл, техника">
 
         <label class="label">Серия (направленная связь)</label>
         <div class="series-row">
-          <input id="series-name" type="text" placeholder="Название серии" value="${escapeHtml(post.seriesName || '')}">
+          <input id="series-name" type="text" placeholder="Название" value="${escapeHtml(post.seriesName || '')}">
           <input id="series-part" type="number" min="1" placeholder="Часть" value="${post.seriesPart || ''}">
           <input id="series-total" type="number" min="1" placeholder="Всего" value="${post.seriesTotal || ''}">
         </div>
 
-        <label class="label">Связанные посты (двусторонние)</label>
+        <label class="label">Связанные посты</label>
         <div class="related-chips" id="related-chips"></div>
-        <input id="related-search" type="text" placeholder="Найти пост по названию…">
+        <input id="related-search" type="text" placeholder="Найти пост...">
         <div class="related-suggestions" id="related-suggestions"></div>
       </div>
 
@@ -449,6 +487,36 @@ async function openPostEditor(id, opts = {}) {
   const titleEl = root.querySelector('#post-title');
   const bodyEl = root.querySelector('#post-body');
 
+  // Image Upload
+  const uploadBox = root.querySelector('#upload-box');
+  const imgInput = root.querySelector('#post-image-input');
+  
+  uploadBox.onclick = (e) => {
+    if (e.target.id === 'remove-img') return;
+    imgInput.click();
+  };
+  
+  imgInput.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    toast('Обработка фото...');
+    currentImage = await processImage(file);
+    uploadBox.innerHTML = `
+      <div class="image-preview-wrap">
+        <img src="${currentImage}" class="image-preview-thumb">
+        <button class="image-remove" id="remove-img">×</button>
+      </div>
+    `;
+  };
+  
+  uploadBox.addEventListener('click', (e) => {
+    if (e.target.id === 'remove-img') {
+      currentImage = '';
+      uploadBox.innerHTML = 'Нажмите, чтобы выбрать фото';
+      imgInput.value = '';
+    }
+  });
+
   root.querySelectorAll('.modal-tab').forEach(t => {
     t.onclick = () => {
       root.querySelectorAll('.modal-tab').forEach(x => x.classList.remove('active'));
@@ -461,11 +529,11 @@ async function openPostEditor(id, opts = {}) {
   root.querySelectorAll('.format-bar button').forEach(b => {
     b.onclick = () => {
       const md = b.dataset.md;
-      if (md === 'bold')   insertMd(bodyEl, '**', '**', 'жирный');
+      if (md === 'bold') insertMd(bodyEl, '**', '**', 'жирный');
       if (md === 'italic') insertMd(bodyEl, '*', '*', 'курсив');
-      if (md === 'link')   insertMd(bodyEl, '[', '](https://)', 'текст');
-      if (md === 'list')   insertMd(bodyEl, '\n- ', '', 'пункт');
-      if (md === 'h2')     insertMd(bodyEl, '\n## ', '', 'подзаголовок');
+      if (md === 'link') insertMd(bodyEl, '[', '](https://)', 'текст');
+      if (md === 'list') insertMd(bodyEl, '\n- ', '', 'пункт');
+      if (md === 'h2') insertMd(bodyEl, '\n## ', '', 'подзаголовок');
     };
   });
 
@@ -477,11 +545,8 @@ async function openPostEditor(id, opts = {}) {
   root.querySelectorAll('.channel-toggle').forEach(btn => {
     btn.onclick = () => {
       const ch = btn.dataset.channel;
-      if (selectedChannels.includes(ch)) {
-        selectedChannels = selectedChannels.filter(x => x !== ch);
-      } else {
-        selectedChannels.push(ch);
-      }
+      if (selectedChannels.includes(ch)) selectedChannels = selectedChannels.filter(x => x !== ch);
+      else selectedChannels.push(ch);
       renderChannels();
     };
   });
@@ -489,40 +554,22 @@ async function openPostEditor(id, opts = {}) {
 
   function renderChips() {
     const el = root.querySelector('#related-chips');
-    el.innerHTML = selectedRelatedIds.map(id => {
-      const title = titleById[id] || 'Без названия';
-      return `<span class="related-chip">${escapeHtml(title)}<button data-remove="${id}">×</button></span>`;
-    }).join('');
+    el.innerHTML = selectedRelatedIds.map(id => `<span class="related-chip">${escapeHtml(titleById[id] || 'Без названия')}<button data-remove="${id}">×</button></span>`).join('');
     el.querySelectorAll('[data-remove]').forEach(b => {
-      b.onclick = (e) => {
-        e.stopPropagation();
-        selectedRelatedIds = selectedRelatedIds.filter(x => x !== b.dataset.remove);
-        renderChips();
-      };
+      b.onclick = (e) => { e.stopPropagation(); selectedRelatedIds = selectedRelatedIds.filter(x => x !== b.dataset.remove); renderChips(); };
     });
   }
   function renderSuggestions(query) {
     const el = root.querySelector('#related-suggestions');
     if (!query || !query.trim()) { el.innerHTML = ''; return; }
     const q = query.toLowerCase();
-    const matches = otherPosts
-      .filter(p => !selectedRelatedIds.includes(p.id))
-      .filter(p => (p.title || '').toLowerCase().includes(q))
-      .slice(0, 10);
-    if (!matches.length) {
-      el.innerHTML = '<div class="related-suggestion" style="color:var(--muted);cursor:default">Ничего не найдено</div>';
-      return;
-    }
+    const matches = otherPosts.filter(p => !selectedRelatedIds.includes(p.id) && (p.title || '').toLowerCase().includes(q)).slice(0, 10);
+    if (!matches.length) { el.innerHTML = '<div class="related-suggestion" style="color:var(--muted);cursor:default">Ничего не найдено</div>'; return; }
     el.innerHTML = matches.map(p => `<div class="related-suggestion" data-add="${p.id}">${escapeHtml(p.title || 'Без названия')}</div>`).join('');
     el.querySelectorAll('[data-add]').forEach(s => {
       s.onclick = () => {
         const rid = s.dataset.add;
-        if (!selectedRelatedIds.includes(rid)) {
-          selectedRelatedIds.push(rid);
-          renderChips();
-          root.querySelector('#related-search').value = '';
-          renderSuggestions('');
-        }
+        if (!selectedRelatedIds.includes(rid)) { selectedRelatedIds.push(rid); renderChips(); root.querySelector('#related-search').value = ''; renderSuggestions(''); }
       };
     });
   }
@@ -536,30 +583,20 @@ async function openPostEditor(id, opts = {}) {
       const p = await dbGet(db, 'posts', rid);
       if (p) relatedTitles.push(p.title || 'Без названия');
     }
-    const series = {
-      name: root.querySelector('#series-name').value.trim(),
-      part: parseInt(root.querySelector('#series-part').value) || null,
-      total: parseInt(root.querySelector('#series-total').value) || null,
-    };
-    root.querySelector('#platform-preview').innerHTML =
-      buildPreview(currentPlatform, titleEl.value, bodyEl.value, series, relatedTitles);
+    const series = { name: root.querySelector('#series-name').value.trim(), part: parseInt(root.querySelector('#series-part').value) || null, total: parseInt(root.querySelector('#series-total').value) || null };
+    root.querySelector('#platform-preview').innerHTML = buildPreview(currentPlatform, titleEl.value, bodyEl.value, series, relatedTitles, currentImage);
   }
   root.querySelectorAll('.platform-tab').forEach(t => {
     t.onclick = () => { currentPlatform = t.dataset.platform; renderPreview(); };
   });
 
   root.querySelector('[data-close]').onclick = () => {
-    const changed = isNew
-      ? (titleEl.value || bodyEl.value)
-      : (post.title !== titleEl.value || post.body !== bodyEl.value);
+    const changed = isNew ? (titleEl.value || bodyEl.value || currentImage) : (post.title !== titleEl.value || post.body !== bodyEl.value || post.coverImage !== currentImage);
     if (changed && !confirm('Есть несохранённые изменения. Выйти?')) return;
-    closeModal();
-    switchTab(currentTab);
+    closeModal(); switchTab(currentTab);
   };
 
-  if (!isNew) {
-    root.querySelector('#post-history').onclick = () => showHistory(post.id);
-  }
+  if (!isNew) root.querySelector('#post-history').onclick = () => showHistory(post.id);
 
   root.querySelector('#post-save').onclick = async () => {
     post.title = titleEl.value.trim();
@@ -570,23 +607,16 @@ async function openPostEditor(id, opts = {}) {
     post.ideaId = root.querySelector('#post-idea').value || null;
     post.tags = root.querySelector('#post-tags').value.split(',').map(t => t.trim()).filter(Boolean);
     post.seriesName = root.querySelector('#series-name').value.trim();
+    post.coverImage = currentImage;
     if (post.seriesName) {
       post.seriesPart = parseInt(root.querySelector('#series-part').value) || null;
       post.seriesTotal = parseInt(root.querySelector('#series-total').value) || null;
-    } else {
-      post.seriesPart = null;
-      post.seriesTotal = null;
-    }
+    } else { post.seriesPart = null; post.seriesTotal = null; }
     post.updatedAt = Date.now();
 
     await dbPut(db, 'post_versions', {
-      id: uid(), postId: post.id,
-      title: post.title, body: post.body,
-      status: post.status, channels: [...post.channels], tags: [...post.tags],
-      seriesName: post.seriesName, seriesPart: post.seriesPart, seriesTotal: post.seriesTotal,
-      publishDate: post.publishDate,
-      savedAt: Date.now(),
-      comment: isNew ? 'Создан' : 'Изменён',
+      id: uid(), postId: post.id, title: post.title, body: post.body, status: post.status,
+      channels: [...post.channels], tags: [...post.tags], seriesName: post.seriesName, seriesPart: post.seriesPart, seriesTotal: post.seriesTotal, publishDate: post.publishDate, savedAt: Date.now(), comment: isNew ? 'Создан' : 'Изменён',
     });
 
     await updateRelatedLinks(post.id, selectedRelatedIds);
@@ -595,16 +625,12 @@ async function openPostEditor(id, opts = {}) {
     await dbPut(db, 'posts', post);
     await markChange();
     toast('Сохранено ✓');
-
     if (isNew) { closeModal(); switchTab('posts'); }
   };
 
   const initialTab = opts.openTab || 'text';
-  if (initialTab === 'preview') {
-    root.querySelector('[data-mode="preview"]').click();
-  } else if (initialTab === 'meta') {
-    root.querySelector('[data-mode="meta"]').click();
-  }
+  if (initialTab === 'preview') root.querySelector('[data-mode="preview"]').click();
+  else if (initialTab === 'meta') root.querySelector('[data-mode="meta"]').click();
 }
 
 async function updateRelatedLinks(postId, newIds) {
@@ -613,22 +639,13 @@ async function updateRelatedLinks(postId, newIds) {
   const oldIds = post.relatedPostIds || [];
   const added = newIds.filter(id => !oldIds.includes(id));
   const removed = oldIds.filter(id => !newIds.includes(id));
-
   for (const otherId of added) {
     const other = await dbGet(db, 'posts', otherId);
-    if (other) {
-      other.relatedPostIds = [...(other.relatedPostIds || []), postId];
-      other.updatedAt = Date.now();
-      await dbPut(db, 'posts', other);
-    }
+    if (other) { other.relatedPostIds = [...(other.relatedPostIds || []), postId]; other.updatedAt = Date.now(); await dbPut(db, 'posts', other); }
   }
   for (const otherId of removed) {
     const other = await dbGet(db, 'posts', otherId);
-    if (other) {
-      other.relatedPostIds = (other.relatedPostIds || []).filter(id => id !== postId);
-      other.updatedAt = Date.now();
-      await dbPut(db, 'posts', other);
-    }
+    if (other) { other.relatedPostIds = (other.relatedPostIds || []).filter(id => id !== postId); other.updatedAt = Date.now(); await dbPut(db, 'posts', other); }
   }
 }
 
@@ -636,9 +653,7 @@ async function deletePost(id) {
   const others = await dbGetAll(db, 'posts');
   for (const p of others) {
     if (p.id !== id && (p.relatedPostIds || []).includes(id)) {
-      p.relatedPostIds = p.relatedPostIds.filter(x => x !== id);
-      p.updatedAt = Date.now();
-      await dbPut(db, 'posts', p);
+      p.relatedPostIds = p.relatedPostIds.filter(x => x !== id); p.updatedAt = Date.now(); await dbPut(db, 'posts', p);
     }
   }
   const versions = await dbGetVersions(db, id);
@@ -646,7 +661,7 @@ async function deletePost(id) {
   await dbDelete(db, 'posts', id);
 }
 
-function buildPreview(platform, title, body, series, relatedTitles) {
+function buildPreview(platform, title, body, series, relatedTitles, image) {
   const p = PLATFORMS[platform];
   const len = body.length;
   const over = len > p.maxLength;
@@ -654,60 +669,42 @@ function buildPreview(platform, title, body, series, relatedTitles) {
   const overHash = p.hashtagLimit && hashtags > p.hashtagLimit;
   const counter = `<div class="counter ${over ? 'over' : ''}">${len} / ${p.maxLength}${overHash ? ` · хэштегов ${hashtags}/${p.hashtagLimit}` : ''}</div>`;
   const md = renderMarkdown(body);
-  const seriesLine = series.name
-    ? `<div class="pf-line">📚 Серия: ${escapeHtml(series.name)}${series.part ? ` · ч. ${series.part}${series.total ? `/${series.total}` : ''}` : ''}</div>`
-    : '';
-  const relatedLine = relatedTitles.length
-    ? `<div class="pf-line">🔗 Связанные посты: ${relatedTitles.map(t => escapeHtml(t)).join(', ')}</div>`
-    : '';
-  const footer = (seriesLine || relatedLine)
-    ? `<div class="preview-footer">${seriesLine}${relatedLine}</div>`
-    : '';
+  const seriesLine = series.name ? `<div class="pf-line">📚 Серия: ${escapeHtml(series.name)}${series.part ? ` · ч. ${series.part}${series.total ? `/${series.total}` : ''}` : ''}</div>` : '';
+  const relatedLine = relatedTitles.length ? `<div class="pf-line">🔗 Связанные посты: ${relatedTitles.map(t => escapeHtml(t)).join(', ')}</div>` : '';
+  const footer = (seriesLine || relatedLine) ? `<div class="preview-footer">${seriesLine}${relatedLine}</div>` : '';
+  
+  const imgHtml = image ? `<img src="${image}" class="ig-image">` : `<div class="ig-image-placeholder" style="background:${p.color}22">Нет фото</div>`;
 
   if (platform === 'instagram') return `
     <div class="ig-preview">
       <div class="ig-header">
-        <div class="ig-avatar" style="background:${p.color}">Е</div>
-        <div class="ig-username">eshe.odna.galochka</div>
+        <div class="ig-avatar" style="background:${p.color}">Е</div><div class="ig-username">eshe.odna.galochka</div>
       </div>
-      <div class="ig-image" style="background:${p.color}22;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:0.85rem">Изображение поста</div>
-      <div class="ig-caption">
-        ${title ? `<div class="ig-title"><strong>${escapeHtml(title)}</strong></div>` : ''}
-        <div class="ig-text">${md}</div>
-      </div>
-      ${footer}
-      ${counter}
+      ${imgHtml}
+      <div class="ig-caption">${title ? `<div class="ig-title"><strong>${escapeHtml(title)}</strong></div>` : ''}<div class="ig-text">${md}</div></div>
+      ${footer}${counter}
     </div>`;
 
   if (platform === 'telegram' || platform === 'max') return `
     <div class="tg-preview">
       <div class="tg-bubble" style="border-left-color:${p.color}">
-        ${title ? `<div class="tg-title">${escapeHtml(title)}</div>` : ''}
-        <div class="tg-text">${md}</div>
+        ${title ? `<div class="tg-title">${escapeHtml(title)}</div>` : ''}<div class="tg-text">${md}</div>
       </div>
-      ${footer}
-      ${counter}
+      ${footer}${counter}
     </div>`;
 
   if (platform === 'vk') return `
     <div class="vk-preview">
-      <div class="vk-header">
-        <div class="vk-avatar" style="background:${p.color}">Е</div>
-        <div><strong>Ещё одна галочка</strong><br><small style="color:var(--muted)">только что</small></div>
-      </div>
-      <div class="vk-text">${md}</div>
-      ${footer}
-      ${counter}
+      <div class="vk-header"><div class="vk-avatar" style="background:${p.color}">Е</div><div><strong>Ещё одна галочка</strong><br><small style="color:var(--muted)">только что</small></div></div>
+      <div class="vk-text">${md}</div>${footer}${counter}
     </div>`;
 
   if (platform === 'zen') return `
     <div class="zen-preview">
       <h2 class="zen-title">${escapeHtml(title) || 'Заголовок публикации'}</h2>
-      <div class="zen-text">${md}</div>
-      ${footer}
-      ${counter}
+      ${image ? `<img src="${image}" style="width:100%;border-radius:10px;margin-bottom:12px;">` : ''}
+      <div class="zen-text">${md}</div>${footer}${counter}
     </div>`;
-
   return '<p>Нет предпросмотра</p>';
 }
 
@@ -717,17 +714,13 @@ async function showHistory(postId) {
   const root = document.getElementById('modal-root');
   root.innerHTML = `
     <div class="modal">
-      <header class="modal-header">
-        <button data-close>←</button>
-        <h2>История версий</h2>
-        <span style="width:40px"></span>
-      </header>
+      <header class="modal-header"><button data-close>←</button><h2>История версий</h2><span style="width:40px"></span></header>
       <div class="editor-view">
         ${!versions.length ? '<p class="empty">Версий пока нет</p>' : versions.map(v => `
           <div class="version-card">
             <div class="version-meta">${fmtDateTime(v.savedAt)} · ${escapeHtml(v.comment || '')}</div>
             <div class="version-title">${escapeHtml(v.title || '—')}</div>
-            <div class="version-snippet">${escapeHtml((v.body || '').slice(0, 100))}${(v.body || '').length > 100 ? '…' : ''}</div>
+            <div class="version-snippet">${escapeHtml((v.body || '').slice(0, 100))}...</div>
             <div class="version-actions">
               <button data-view-id="${v.id}">Просмотр</button>
               <button class="btn-primary" data-restore-id="${v.id}" data-post-id="${postId}">Восстановить</button>
@@ -735,7 +728,7 @@ async function showHistory(postId) {
           </div>`).join('')}
       </div>
     </div>`;
-  root.querySelector('[data-close]').onclick = () => closeModal();
+  root.querySelector('[data-close]').onclick = closeModal;
   root.querySelectorAll('[data-view-id]').forEach(b => {
     b.onclick = async () => {
       const v = await dbGet(db, 'post_versions', b.dataset.viewId);
@@ -744,32 +737,15 @@ async function showHistory(postId) {
   });
   root.querySelectorAll('[data-restore-id]').forEach(b => {
     b.onclick = async () => {
-      if (!confirm('Восстановить эту версию? Текущее состояние сохранится в истории.')) return;
+      if (!confirm('Восстановить эту версию?')) return;
       const v = await dbGet(db, 'post_versions', b.dataset.restoreId);
       const post = await dbGet(db, 'posts', b.dataset.postId);
-      await dbPut(db, 'post_versions', {
-        id: uid(), postId: post.id,
-        title: post.title, body: post.body,
-        status: post.status, channels: [...(post.channels || [])], tags: [...(post.tags || [])],
-        seriesName: post.seriesName, seriesPart: post.seriesPart, seriesTotal: post.seriesTotal,
-        publishDate: post.publishDate,
-        savedAt: Date.now(), comment: 'До восстановления',
-      });
-      post.title = v.title || '';
-      post.body = v.body || '';
-      post.status = v.status || post.status;
-      post.channels = v.channels || post.channels;
-      post.tags = v.tags || post.tags;
-      post.seriesName = v.seriesName || '';
-      post.seriesPart = v.seriesPart ?? null;
-      post.seriesTotal = v.seriesTotal ?? null;
-      post.publishDate = v.publishDate || '';
-      post.updatedAt = Date.now();
-      await dbPut(db, 'posts', post);
-      await markChange();
-      closeModal();
-      toast('Восстановлено ✓');
-      openPostEditor(post.id);
+      await dbPut(db, 'post_versions', { id: uid(), postId: post.id, title: post.title, body: post.body, status: post.status, channels: [...post.channels], tags: [...post.tags], seriesName: post.seriesName, seriesPart: post.seriesPart, seriesTotal: post.seriesTotal, publishDate: post.publishDate, savedAt: Date.now(), comment: 'До восстановления' });
+      post.title = v.title || ''; post.body = v.body || ''; post.status = v.status || post.status;
+      post.channels = v.channels || post.channels; post.tags = v.tags || post.tags;
+      post.seriesName = v.seriesName || ''; post.seriesPart = v.seriesPart ?? null; post.seriesTotal = v.seriesTotal ?? null;
+      post.publishDate = v.publishDate || ''; post.updatedAt = Date.now();
+      await dbPut(db, 'posts', post); await markChange(); closeModal(); toast('Восстановлено ✓'); openPostEditor(post.id);
     };
   });
 }
@@ -779,22 +755,15 @@ async function renderIdeas() {
   const ideas = await dbGetAll(db, 'ideas');
   ideas.sort((a, b) => b.createdAt - a.createdAt);
   const list = document.getElementById('ideas-list');
-  if (!ideas.length) { list.innerHTML = '<p class="empty">Пока пусто. Запишите первую идею.</p>'; return; }
+  if (!ideas.length) { list.innerHTML = '<p class="empty">Пока пусто.</p>'; return; }
   
   list.innerHTML = ideas.map(i => {
     const st = IDEA_STATUSES[i.status] || IDEA_STATUSES.new;
     return `
       <div class="swipe-wrapper">
-        <div class="swipe-actions">
-          <button class="swipe-delete">
-            <span style="font-size:1.2rem">🗑</span>
-            Удалить
-          </button>
-        </div>
+        <div class="swipe-actions"><button class="swipe-delete"><span style="font-size:1.2rem">🗑</span>Удалить</button></div>
         <div class="swipe-content card" data-action="edit-idea" data-id="${i.id}">
-          <div class="card-row">
-            <span class="status-pill" style="background:${st.color}">${st.label}</span>
-          </div>
+          <div class="card-row"><span class="status-pill" style="background:${st.color}">${st.label}</span></div>
           <h3 class="card-title">${escapeHtml(i.title)}</h3>
           ${i.description ? `<p class="card-body">${escapeHtml(i.description)}</p>` : ''}
           ${i.tags ? `<div class="tags">${i.tags.split(',').map(t => `<span class="tag">${escapeHtml(t.trim())}</span>`).join('')}</div>` : ''}
@@ -804,35 +773,22 @@ async function renderIdeas() {
 
   list.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
     const id = wrapper.querySelector('.swipe-content').dataset.id;
-    setupSwipe(wrapper, () => {
-      if (confirm('Удалить эту идею?')) executeDeleteIdea(id);
-    });
+    setupSwipe(wrapper, () => { if (confirm('Удалить идею?')) executeDeleteIdea(id); });
   });
 }
 
 async function openIdeaEditor(id) {
-  let idea;
-  if (!id) idea = { id: uid(), title: '', description: '', tags: '', status: 'new', createdAt: Date.now() };
-  else idea = await dbGet(db, 'ideas', id);
+  let idea = id ? await dbGet(db, 'ideas', id) : { id: uid(), title: '', description: '', tags: '', status: 'new', createdAt: Date.now() };
   const root = document.getElementById('modal-root');
   root.innerHTML = `
     <div class="modal">
-      <header class="modal-header">
-        <button data-close>←</button>
-        <h2>${id ? 'Идея' : 'Новая идея'}</h2>
-        <button class="btn-primary" id="save-idea">Сохранить</button>
-      </header>
+      <header class="modal-header"><button data-close>←</button><h2>${id ? 'Идея' : 'Новая идея'}</h2><button class="btn-primary" id="save-idea">Сохранить</button></header>
       <div class="editor-view">
-        <label class="label">Заголовок</label>
-        <input id="idea-title" type="text" value="${escapeHtml(idea.title)}" placeholder="О чём идея?">
-        <label class="label">Описание</label>
-        <textarea id="idea-desc" class="small-textarea" placeholder="Пара мыслей, контекст, ссылки">${escapeHtml(idea.description)}</textarea>
-        <label class="label">Теги (через запятую)</label>
-        <input id="idea-tags" type="text" value="${escapeHtml(idea.tags)}" placeholder="лайфстайл, техника, личное">
+        <label class="label">Заголовок</label><input id="idea-title" type="text" value="${escapeHtml(idea.title)}" placeholder="О чём идея?">
+        <label class="label">Описание</label><textarea id="idea-desc" class="small-textarea" placeholder="Контекст...">${escapeHtml(idea.description)}</textarea>
+        <label class="label">Теги</label><input id="idea-tags" type="text" value="${escapeHtml(idea.tags)}" placeholder="лайфстайл, техника">
         <label class="label">Статус</label>
-        <select id="idea-status">
-          ${Object.entries(IDEA_STATUSES).map(([k, v]) => `<option value="${k}" ${idea.status === k ? 'selected' : ''}>${v.label}</option>`).join('')}
-        </select>
+        <select id="idea-status">${Object.entries(IDEA_STATUSES).map(([k, v]) => `<option value="${k}" ${idea.status === k ? 'selected' : ''}>${v.label}</option>`).join('')}</select>
       </div>
     </div>`;
   root.querySelector('[data-close]').onclick = closeModal;
@@ -842,103 +798,129 @@ async function openIdeaEditor(id) {
     idea.tags = root.querySelector('#idea-tags').value.trim();
     idea.status = root.querySelector('#idea-status').value;
     if (!idea.title) return toast('Заголовок обязателен');
-    await dbPut(db, 'ideas', idea);
-    await markChange();
-    closeModal();
-    renderIdeas();
-    toast('Сохранено ✓');
+    await dbPut(db, 'ideas', idea); await markChange(); closeModal(); renderIdeas(); toast('Сохранено ✓');
   };
 }
 
 async function saveMission() {
-  const body = document.getElementById('mission-body').value;
-  await dbPut(db, 'mission', { id: 'main', body, updatedAt: Date.now() });
-  await markChange();
-  toast('Сохранено ✓');
+  await dbPut(db, 'mission', { id: 'main', body: document.getElementById('mission-body').value, updatedAt: Date.now() });
+  await markChange(); toast('Сохранено ✓');
 }
 
 async function renderSettings() {
   const settings = await dbGet(db, 'settings', 'main');
-  const el = document.getElementById('last-backup');
-  el.textContent = settings?.lastBackupAt
-    ? `Последний бэкап: ${fmtDateTime(settings.lastBackupAt)}`
-    : 'Последний бэкап: —';
+  document.getElementById('last-backup').textContent = settings?.lastBackupAt ? `Последний бэкап: ${fmtDateTime(settings.lastBackupAt)}` : 'Последний бэкап: —';
+  
+  if (settings && settings.emailjs) {
+    document.getElementById('emailjs-service').value = settings.emailjs.service || '';
+    document.getElementById('emailjs-template').value = settings.emailjs.template || '';
+    document.getElementById('emailjs-key').value = settings.emailjs.publicKey || '';
+    document.getElementById('emailjs-status').textContent = settings.emailjs.publicKey ? 'Автобэкап включен ✓' : 'Не настроен';
+  }
 }
 
+async function saveEmailjsSettings() {
+  const service = document.getElementById('emailjs-service').value.trim();
+  const template = document.getElementById('emailjs-template').value.trim();
+  const publicKey = document.getElementById('emailjs-key').value.trim();
+  const settings = await dbGet(db, 'settings', 'main');
+  settings.emailjs = { service, template, publicKey };
+  await dbPut(db, 'settings', settings);
+  
+  emailjsConfig = settings.emailjs;
+  if (publicKey && typeof emailjs !== 'undefined') {
+    emailjs.init({ publicKey });
+  }
+  toast('Настройки сохранены');
+  renderSettings();
+}
+
+// ============ Backup Logic ============
 async function markChange() {
   const settings = await dbGet(db, 'settings', 'main');
   settings.pendingChanges = (settings.pendingChanges || 0) + 1;
   await dbPut(db, 'settings', settings);
   pendingBackupCount = settings.pendingChanges;
   updateBackupBadge();
+  
+  // Триггерим автобэкап, если настроено
+  if (emailjsConfig.service && emailjsConfig.template && emailjsConfig.publicKey) {
+    triggerAutoBackup();
+  }
+}
+
+async function triggerAutoBackup() {
+  try {
+    const data = await exportAll();
+    const payload = {
+      message: JSON.stringify(data),
+      filename: `backup-${new Date().toISOString().slice(0,10)}.json`,
+      subject: 'Автобэкап "Ещё одна галочка"'
+    };
+    
+    await emailjs.send(emailjsConfig.service, emailjsConfig.template, payload, emailjsConfig.publicKey);
+    
+    const settings = await dbGet(db, 'settings', 'main');
+    settings.pendingChanges = 0;
+    settings.lastBackupAt = Date.now();
+    await dbPut(db, 'settings', settings);
+    pendingBackupCount = 0;
+    updateBackupBadge();
+    if (currentTab === 'settings') renderSettings();
+    console.log('Автобэкап отправлен');
+  } catch (e) {
+    console.error('Ошибка автобэкапа:', e);
+    toast('Не удалось отправить бэкап. Проверьте настройки.');
+  }
 }
 
 function updateBackupBadge() {
   const badge = document.getElementById('backup-badge');
-  const count = document.getElementById('backup-count');
-  if (pendingBackupCount > 0) {
+  if (pendingBackupCount > 0 && !emailjsConfig.publicKey) { // Показываем бейдж только если нет автобэкапа
     badge.classList.remove('hidden');
-    count.textContent = pendingBackupCount;
+    document.getElementById('backup-count').textContent = pendingBackupCount;
   } else {
     badge.classList.add('hidden');
   }
 }
 
 async function exportAll() {
-  const result = { exportedAt: new Date().toISOString(), version: 2, app: 'eshe-odna-galochka' };
-  for (const store of ['ideas', 'posts', 'post_versions', 'mission']) {
-    result[store] = await dbGetAll(db, store);
-  }
+  const result = { exportedAt: new Date().toISOString(), version: 3, app: 'eshe-odna-galochka' };
+  for (const store of ['ideas', 'posts', 'post_versions', 'mission']) result[store] = await dbGetAll(db, store);
   return result;
 }
 
-async function sendBackup() {
+async function sendManualBackup() {
   try {
     const data = await exportAll();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const filename = `galochka-backup-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
     const file = new File([blob], filename, { type: 'application/json' });
-
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: 'Бэкап «Ещё одна галочка»' });
+      await navigator.share({ files: [file], title: 'Бэкап галочки' });
       const settings = await dbGet(db, 'settings', 'main');
-      settings.pendingChanges = 0;
-      settings.lastBackupAt = Date.now();
-      await dbPut(db, 'settings', settings);
-      pendingBackupCount = 0;
-      updateBackupBadge();
+      settings.pendingChanges = 0; settings.lastBackupAt = Date.now();
+      await dbPut(db, 'settings', settings); pendingBackupCount = 0; updateBackupBadge();
       if (currentTab === 'settings') renderSettings();
       toast('Бэкап отправлен ✓');
     } else {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = filename; a.click();
-      URL.revokeObjectURL(url);
-      toast('Файл скачан');
+      const url = URL.createObjectURL(blob); const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url); toast('Файл скачан');
     }
-  } catch (e) {
-    if (e.name !== 'AbortError') toast('Ошибка: ' + e.message);
-  }
+  } catch (e) { if (e.name !== 'AbortError') toast('Ошибка: ' + e.message); }
 }
 
 async function handleRestoreFile(e) {
-  const file = e.target.files[0];
-  if (!file) return;
+  const file = e.target.files[0]; if (!file) return;
   try {
-    const text = await file.text();
-    const data = JSON.parse(text);
-    if (!confirm('Восстановить из бэкапа? Записи с совпадающими ID будут перезаписаны, остальные добавятся.')) {
-      e.target.value = ''; return;
-    }
+    const text = await file.text(); const data = JSON.parse(text);
+    if (!confirm('Восстановить из бэкапа?')) { e.target.value = ''; return; }
     for (const store of ['ideas', 'posts', 'post_versions', 'mission']) {
       if (!Array.isArray(data[store])) continue;
       for (const item of data[store]) await dbPut(db, store, item);
     }
-    toast('Восстановлено ✓');
-    switchTab(currentTab);
-  } catch (err) {
-    alert('Ошибка восстановления: ' + err.message);
-  }
+    toast('Восстановлено ✓'); switchTab(currentTab);
+  } catch (err) { alert('Ошибка: ' + err.message); }
   e.target.value = '';
 }
 
