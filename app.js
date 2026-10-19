@@ -97,72 +97,87 @@ function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
 function setupSwipe(wrapper, onDelete) {
   const content = wrapper.querySelector('.swipe-content');
   let startX = 0, startY = 0, currentX = 0;
-  let isDragging = false;
-  let isSwiping = false; // Защита от случайного клика
-  const threshold = 60;
+  let isSwiping = false;
+  let isScrolling = false;
+  let isOpen = false;
+
+  // Перехватываем клик, если карточка открыта или если был свайп
+  content.addEventListener('click', (e) => {
+    if (isOpen) {
+      e.preventDefault();
+      e.stopPropagation();
+      content.style.transition = 'transform 0.2s';
+      content.style.transform = 'translateX(0px)';
+      isOpen = false;
+    } else if (isSwiping) {
+      // Блокируем клик, если только что был свайп
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    // Если ничего не открыто и свайпа не было, клик спокойно уходит дальше в handleGlobalClick
+  });
 
   content.addEventListener('touchstart', e => {
+    if (isOpen) return; 
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
-    isDragging = true;
     isSwiping = false;
+    isScrolling = false;
     content.style.transition = 'none';
   }, {passive: true});
 
   content.addEventListener('touchmove', e => {
-    if (!isDragging) return;
+    if (isOpen || isScrolling) return;
+    
     currentX = e.touches[0].clientX;
+    let currentY = e.touches[0].clientY;
     let diffX = currentX - startX;
-    let diffY = e.touches[0].clientY - startY;
+    let diffY = currentY - startY;
 
-    if (Math.abs(diffX) > 10) isSwiping = true;
-
-    if (Math.abs(diffY) > Math.abs(diffX) && content.style.transform === 'translateX(0px)') {
-      isDragging = false;
-      return;
+    // Определяем намерение пользователя
+    if (!isSwiping) {
+      // Свайп срабатывает, только если движение по горизонтали больше 10px И больше, чем по вертикали
+      if (Math.abs(diffX) > 10 && Math.abs(diffX) > Math.abs(diffY)) {
+        isSwiping = true;
+      } else if (Math.abs(diffY) > 10) {
+        // Если движение по вертикали больше — это скролл, игнорируем
+        isScrolling = true;
+        return;
+      }
     }
 
-    if (diffX < 0) {
-      if (Math.abs(diffX) > 10) e.preventDefault();
+    if (isSwiping && diffX < 0) {
+      e.preventDefault();
       let move = Math.max(-80, diffX);
       content.style.transform = `translateX(${move}px)`;
     }
   }, {passive: false});
 
-  content.addEventListener('touchend', () => {
-    if (!isDragging) return;
-    isDragging = false;
-    content.style.transition = 'transform 0.2s';
-    let diffX = currentX - startX;
-    
-    if (diffX < -threshold) {
-      content.style.transform = `translateX(-80px)`;
-    } else {
-      content.style.transform = `translateX(0px)`;
-    }
-    startX = 0; currentX = 0;
-  });
+  content.addEventListener('touchend', (e) => {
+    if (isOpen || isScrolling) return;
 
-  // Клик по контенту
-  content.addEventListener('click', (e) => {
-    // Если был свайп, отменяем клик
     if (isSwiping) {
+      let diffX = currentX - startX;
+      content.style.transition = 'transform 0.2s';
+      
+      if (diffX < -40) {
+        content.style.transform = 'translateX(-80px)';
+        isOpen = true;
+      } else {
+        content.style.transform = 'translateX(0px)';
+      }
+      // Предотвращаем синтетический клик после свайпа
       e.preventDefault();
-      e.stopPropagation();
-      return;
     }
     
-    // Если карточка открыта для удаления, клик её закрывает
-    if (content.style.transform === 'translateX(-80px)') {
-      e.preventDefault();
-      e.stopPropagation();
-      content.style.transform = 'translateX(0px)';
-    }
+    // Сбрасываем флаг с небольшой задержкой, чтобы клик не сработал случайно
+    setTimeout(() => { isSwiping = false; }, 50);
   });
 
-  // Клик по кнопке удаления
+  // Кнопка удаления
   wrapper.querySelector('.swipe-delete').addEventListener('click', () => {
     content.style.transform = 'translateX(0px)';
+    isOpen = false;
     onDelete();
   });
 }
@@ -219,9 +234,9 @@ async function handleGlobalClick(e) {
   switch (action) {
     case 'new-plan': openPostEditor('new', { prefillDate: true, openTab: 'meta' }); break;
     case 'new-post': openPostEditor('new', { openTab: 'text' }); break;
-    case 'edit-post': openPostEditor(id); break; // ВОЗВРАЩЕНО
+    case 'edit-post': openPostEditor(id); break;
     case 'new-idea': openIdeaEditor(null); break;
-    case 'edit-idea': openIdeaEditor(id); break; // ВОЗВРАЩЕНО
+    case 'edit-idea': openIdeaEditor(id); break;
     case 'save-mission': saveMission(); break;
     case 'backup-now': sendBackup(); break;
     case 'restore-backup': document.getElementById('restore-file').click(); break;
@@ -480,7 +495,7 @@ async function openPostEditor(id, opts = {}) {
     }).join('');
     el.querySelectorAll('[data-remove]').forEach(b => {
       b.onclick = (e) => {
-        e.stopPropagation(); // Чтобы не сработал клик по другим элементам
+        e.stopPropagation();
         selectedRelatedIds = selectedRelatedIds.filter(x => x !== b.dataset.remove);
         renderChips();
       };
@@ -768,7 +783,6 @@ async function renderIdeas() {
   
   list.innerHTML = ideas.map(i => {
     const st = IDEA_STATUSES[i.status] || IDEA_STATUSES.new;
-    // data-action="edit-idea" навешан на весь swipe-content
     return `
       <div class="swipe-wrapper">
         <div class="swipe-actions">
