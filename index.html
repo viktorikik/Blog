@@ -11,6 +11,8 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="styles.css">
+<!-- Подключаем EmailJS -->
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 </head>
 <body>
 <div id="app">
@@ -26,6 +28,15 @@
       <div class="section-toolbar">
         <button class="btn-primary" data-action="new-plan">+ Запланировать пост</button>
       </div>
+      
+      <div class="search-filter-bar">
+        <input type="text" id="search-plan" placeholder="Поиск по плану..." class="search-input">
+        <div class="filter-chips" id="filter-plan">
+          <button class="filter-chip active" data-filter="all">Все</button>
+          <!-- Чипы каналов будут добавлены через JS -->
+        </div>
+      </div>
+
       <div id="plan-list" class="list"></div>
     </section>
 
@@ -33,6 +44,14 @@
       <div class="section-toolbar">
         <button class="btn-primary" data-action="new-post">+ Новый пост</button>
       </div>
+
+      <div class="search-filter-bar">
+        <input type="text" id="search-posts" placeholder="Поиск по всем постам..." class="search-input">
+        <div class="filter-chips" id="filter-posts">
+          <button class="filter-chip active" data-filter="all">Все</button>
+        </div>
+      </div>
+
       <div id="posts-list" class="list"></div>
     </section>
 
@@ -53,17 +72,30 @@
 
     <section id="section-settings" class="section">
       <div class="settings-block">
-        <h3>Резервное копирование</h3>
-        <p class="hint">Бэкап накапливается при каждом сохранении. Нажмите бейдж 📥 в шапке, чтобы отправить JSON-файл на почту через «Поделиться».</p>
+        <h3>Автоматический бэкап (EmailJS)</h3>
+        <p class="hint">Настройте отправку JSON-файла на почту при каждом сохранении.</p>
+        <label class="label">Service ID</label>
+        <input type="text" id="emailjs-service">
+        <label class="label">Template ID</label>
+        <input type="text" id="emailjs-template">
+        <label class="label">Public Key</label>
+        <input type="text" id="emailjs-key">
+        <button class="btn-secondary" data-action="save-emailjs">Сохранить ключи</button>
+        <p class="hint" id="emailjs-status" style="margin-top: 8px; color: var(--sage); font-weight: 600;"></p>
+      </div>
+
+      <div class="settings-block">
+        <h3>Ручное резервное копирование</h3>
+        <p class="hint">Если автобэкап не настроен, отправляйте файл вручную через бейдж 📥 в шапке.</p>
         <button class="btn-secondary" data-action="backup-now">Отправить бэкап сейчас</button>
         <button class="btn-secondary" data-action="restore-backup">Восстановить из файла</button>
         <input type="file" id="restore-file" accept="application/json" hidden>
         <p class="hint" id="last-backup">Последний бэкап: —</p>
       </div>
+      
       <div class="settings-block">
         <h3>О приложении</h3>
-        <p class="hint">Версия 0.2.0. Посты с датой публикации попадают в план, без даты — в общий список. Связи между постами двусторонние; серии — направленные.</p>
-        <p class="hint">Данные хранятся локально в браузере (IndexedDB). Установите на главный экран — иначе Safari может удалить данные после 7 дней неиспользования.</p>
+        <p class="hint">Версия 0.3.0. Посты с датой публикации попадают в план, без даты — в общий список. Связи между постами двусторонние; серии — направленные. Поиск и фильтры работают в разделах «План» и «Посты».</p>
       </div>
     </section>
   </main>
