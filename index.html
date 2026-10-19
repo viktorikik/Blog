@@ -11,48 +11,61 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="styles.css">
-<!-- Подключаем EmailJS -->
 <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 </head>
 <body>
 <div id="app">
   <header id="app-header">
     <h1 id="section-title">Контент-план</h1>
-    <button id="backup-badge" class="backup-badge hidden" title="Отправить бэкап">
-      <span>📥</span><span id="backup-count">0</span>
-    </button>
+    <div class="header-actions">
+      <button id="theme-toggle" class="icon-btn" title="Сменить тему">🌙</button>
+      <button id="backup-badge" class="backup-badge hidden" title="Отправить бэкап">
+        <span>📥</span><span id="backup-count">0</span>
+      </button>
+    </div>
   </header>
 
   <main id="main">
     <section id="section-plan" class="section active">
       <div class="section-toolbar">
         <button class="btn-primary" data-action="new-plan">+ Запланировать пост</button>
-      </div>
-      
-      <div class="search-filter-bar">
-        <input type="text" id="search-plan" placeholder="Поиск по плану..." class="search-input">
-        <div class="filter-chips" id="filter-plan">
-          <button class="filter-chip active" data-filter="all">Все</button>
-          <!-- Чипы каналов будут добавлены через JS -->
+        <div class="view-toggle">
+          <button class="active" data-view="plan-list">Список</button>
+          <button data-view="plan-calendar">Сетка</button>
         </div>
       </div>
-
-      <div id="plan-list" class="list"></div>
+      
+      <div id="plan-view-container">
+        <div class="search-filter-bar" id="plan-filters">
+          <input type="text" id="search-plan" placeholder="Поиск по плану..." class="search-input">
+          <div class="filter-chips" id="filter-plan">
+            <button class="filter-chip active" data-filter="all">Все</button>
+          </div>
+        </div>
+        <div id="plan-list" class="list"></div>
+        <div id="plan-calendar" class="calendar-container hidden"></div>
+      </div>
     </section>
 
     <section id="section-posts" class="section">
       <div class="section-toolbar">
         <button class="btn-primary" data-action="new-post">+ Новый пост</button>
-      </div>
-
-      <div class="search-filter-bar">
-        <input type="text" id="search-posts" placeholder="Поиск по всем постам..." class="search-input">
-        <div class="filter-chips" id="filter-posts">
-          <button class="filter-chip active" data-filter="all">Все</button>
+        <div class="view-toggle">
+          <button class="active" data-view="posts-list">Список</button>
+          <button data-view="posts-kanban">Доска</button>
         </div>
       </div>
 
-      <div id="posts-list" class="list"></div>
+      <div id="posts-view-container">
+        <div class="search-filter-bar" id="posts-filters">
+          <input type="text" id="search-posts" placeholder="Поиск по всем постам..." class="search-input">
+          <div class="filter-chips" id="filter-posts">
+            <button class="filter-chip active" data-filter="all">Все</button>
+          </div>
+        </div>
+        <div id="posts-list" class="list"></div>
+        <div id="posts-kanban" class="kanban-container hidden"></div>
+      </div>
     </section>
 
     <section id="section-ideas" class="section">
@@ -86,7 +99,7 @@
 
       <div class="settings-block">
         <h3>Ручное резервное копирование</h3>
-        <p class="hint">Если автобэкап не настроен, отправляйте файл вручную через бейдж 📥 в шапке.</p>
+        <p class="hint">Если автобэкап не настроен, отправляйте файл вручную.</p>
         <button class="btn-secondary" data-action="backup-now">Отправить бэкап сейчас</button>
         <button class="btn-secondary" data-action="restore-backup">Восстановить из файла</button>
         <input type="file" id="restore-file" accept="application/json" hidden>
@@ -95,7 +108,7 @@
       
       <div class="settings-block">
         <h3>О приложении</h3>
-        <p class="hint">Версия 0.3.0. Посты с датой публикации попадают в план, без даты — в общий список. Связи между постами двусторонние; серии — направленные. Поиск и фильтры работают в разделах «План» и «Посты».</p>
+        <p class="hint">Версия 0.3.0. Канбан-доска, Календарь, Тёмная тема, Копирование. Поиск и фильтры работают везде.</p>
       </div>
     </section>
   </main>
