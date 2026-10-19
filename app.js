@@ -390,7 +390,6 @@ function buildPostCard(post, mode) {
     metaLine = `<div class="card-meta">Изменён ${fmtDateTime(post.updatedAt)}${post.publishDate ? ` · 📅 ${fmtDate(new Date(post.publishDate).getTime())}` : ''}</div>`;
   }
 
-  // Проверка чек-листа
   let warningHtml = '';
   if (post.status === 'ready' || post.status === 'published') {
     const c = post.checklist || {};
@@ -646,6 +645,12 @@ async function openPostEditor(id, opts = {}) {
       <div class="editor-view" data-view="text">
         <input id="post-title" class="title-input" type="text" placeholder="Заголовок поста" value="${escapeHtml(post.title)}">
         
+        <!-- Шаблоны перенесены сюда, наверх -->
+        <label class="label" style="margin-top:12px">Шаблоны текста</label>
+        <div class="template-bar">
+          ${Object.keys(TEMPLATES).map(name => `<button class="template-btn" data-template="${name}">${name}</button>`).join('')}
+        </div>
+
         <label class="label">Обложка</label>
         <div class="image-upload-box" id="upload-box">
           ${currentImage ? `
@@ -656,11 +661,6 @@ async function openPostEditor(id, opts = {}) {
           ` : 'Нажмите, чтобы выбрать фото'}
         </div>
         <input type="file" id="post-image-input" accept="image/*" hidden>
-
-        <label class="label" style="margin-top:16px">Шаблоны</label>
-        <div class="template-bar">
-          ${Object.keys(TEMPLATES).map(name => `<button class="template-btn" data-template="${name}">${name}</button>`).join('')}
-        </div>
 
         <label class="label">Текст поста</label>
         <div class="format-bar">
