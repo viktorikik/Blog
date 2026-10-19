@@ -3,8 +3,8 @@
   --graphite: #292724;
   --lime: #DCEB32;
   --coral: #F27691;
-  --sage: #7E9E70; /* Сделали чуть свежее */
-  --sage-light: #B4D2A8; /* Новый цвет для статусов */
+  --sage: #7E9E70;
+  --sage-light: #B4D2A8;
   --paper: #fffaf1;
   --muted: #756f65;
   --line: #dfd4c4;
@@ -67,19 +67,21 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 }
 .swipe-content {
   position: relative; z-index: 2;
-  transition: transform 0.2s ease-out;
-  touch-action: pan-y; /* Разрешаем вертикальный скролл, ловим горизонтальный */
+  transition: transform 0.2s ease-out, background-color 0.1s;
+  touch-action: pan-y;
 }
-.card { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 16px; position: relative; margin-bottom: -1px; /* Убираем двойные рамки */ }
+.card { 
+  background: var(--paper); border: 1px solid var(--line); 
+  border-radius: 14px; padding: 16px; position: relative; 
+  margin-bottom: -1px; cursor: pointer;
+}
+.card:active { background: #f0e8dc; } /* Визуальный отклик при нажатии */
 /* --- END SWIPE --- */
 
-.card-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; padding-right: 40px; align-items: center; }
+.card-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; }
 .card-title { font-size: 1.05rem; margin: 0 0 6px; line-height: 1.3; }
 .card-body { margin: 0 0 8px; color: var(--muted); font-size: 0.92rem; }
 .card-meta { color: var(--muted); font-size: 0.82rem; }
-.card-actions { position: absolute; top: 10px; right: 10px; display: flex; gap: 2px; }
-.card-actions button { background: transparent; border: none; font-size: 1rem; padding: 6px; cursor: pointer; opacity: 0.7; }
-.card-actions button:active { opacity: 1; }
 
 .channel-pill, .status-pill {
   display: inline-block; padding: 3px 10px; border-radius: 999px;
