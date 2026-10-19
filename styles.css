@@ -111,6 +111,9 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   transition: transform 0.2s ease-out, background-color 0.1s;
   touch-action: pan-y;
   will-change: transform;
+  -webkit-user-select: none; /* Запрет выделения текста */
+  user-select: none;
+  -webkit-touch-callout: none; /* Запрет контекстного меню iOS */
 }
 .card { 
   background: var(--bg-paper); border: 1px solid var(--border-line); 
