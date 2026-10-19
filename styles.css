@@ -66,9 +66,9 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .view-toggle { display: flex; background: var(--bg-paper); border: 1px solid var(--border-line); border-radius: 999px; padding: 2px; }
 .view-toggle button {
   background: transparent; border: none; padding: 6px 14px; border-radius: 999px;
-  font-size: 0.85rem; font-weight: 600; color: var(--muted); cursor: pointer;
+  font-size: 0.85rem; font-weight: 600; color: var(--text-main); opacity: 0.6; cursor: pointer;
 }
-.view-toggle button.active { background: var(--lime); color: #292724; }
+.view-toggle button.active { background: var(--lime); color: #292724; opacity: 1; }
 
 .btn-primary {
   background: var(--lime); color: #292724; border: 2px solid #292724;
@@ -160,7 +160,7 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .kanban-count { background: var(--bg-paper); border-radius: 999px; padding: 2px 8px; font-size: 0.75rem; border: 1px solid var(--border-line); }
 .kanban-cards { display: flex; flex-direction: column; gap: 8px; }
 
-/* CALENDAR (Компактнее) */
+/* CALENDAR */
 .calendar-container { background: var(--bg-paper); border-radius: 14px; padding: 16px; border: 1px solid var(--border-line); }
 .cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-weight: 700; font-size: 1rem; }
 .cal-nav-btn { background: transparent; border: 1px solid var(--border-line); border-radius: 6px; width: 32px; height: 32px; cursor: pointer; color: var(--text-main); }
@@ -193,27 +193,33 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .nav-icon { font-size: 1.2rem; }
 
 /* Modal */
-.modal { position: fixed; inset: 0; background: var(--bg-app); z-index: 100; display: flex; flex-direction: column; overflow: hidden; }
+.modal { position: fixed; inset: 0; background: var(--bg-app); z-index: 100; display: flex; flex-direction: column; height: 100dvh; }
 .modal-header {
   position: sticky; top: 0; background: var(--bg-app); display: flex; align-items: center;
   justify-content: space-between; padding: calc(env(safe-area-inset-top) + 12px) 16px 12px;
-  border-bottom: 1px solid var(--border-line); gap: 8px; z-index: 5;
+  border-bottom: 1px solid var(--border-line); gap: 8px; z-index: 5; flex-shrink: 0;
 }
 .modal-header h2 { font-size: 1.05rem; margin: 0; flex: 1; text-align: center; }
 .modal-header button { background: transparent; border: none; font-size: 1.1rem; padding: 6px 10px; cursor: pointer; color: var(--text-main); }
-.editor-view, .preview-view { padding: 16px; max-width: 720px; margin: 0 auto; width: 100%; flex: 1; overflow-y: auto; }
+.editor-view, .preview-view { padding: 16px; max-width: 720px; margin: 0 auto; width: 100%; flex: 1; overflow-y: auto; min-height: 0; -webkit-overflow-scrolling: touch; }
 .editor-view.hidden, .preview-view.hidden { display: none; }
 
 .label { display: block; font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 16px 0 6px; }
-.modal input[type="text"], .modal input[type="date"], .modal input[type="number"], .modal select, .modal textarea {
+.modal input[type="text"], .modal input[type="number"], .modal select, .modal textarea {
   width: 100%; padding: 12px; border: 1px solid var(--border-line); border-radius: 10px;
   background: var(--bg-paper); font: inherit; color: var(--text-main);
+}
+/* Компактная дата для Safari */
+.modal input[type="date"] {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border-line); border-radius: 10px;
+  background: var(--bg-paper); font: inherit; color: var(--text-main);
+  height: 44px; -webkit-appearance: none; appearance: none;
 }
 .modal input:focus, .modal select:focus, .modal textarea:focus { outline: 2px solid var(--lime); outline-offset: -1px; }
 .small-textarea { min-height: 100px; resize: vertical; }
 
 /* Editor tabs */
-.modal-tabs { display: flex; border-bottom: 1px solid var(--border-line); padding: 0 16px; background: var(--bg-app); }
+.modal-tabs { display: flex; border-bottom: 1px solid var(--border-line); padding: 0 16px; background: var(--bg-app); flex-shrink: 0; }
 .modal-tab {
   flex: 1; background: transparent; border: none; padding: 12px 8px;
   font-size: 0.92rem; font-weight: 600; color: var(--muted); cursor: pointer;
@@ -228,18 +234,19 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   border-bottom: 1px solid var(--border-line) !important;
   width: 100%;
 }
-.format-bar { display: flex; gap: 4px; margin-bottom: 8px; padding: 4px; background: var(--bg-paper); border: 1px solid var(--border-line); border-radius: 10px; }
-.format-bar button { background: transparent; border: none; padding: 8px 12px; font-size: 0.95rem; cursor: pointer; border-radius: 6px; color: var(--text-main); }
-.format-bar button:active { background: var(--lime); color: #292724; }
-.body-textarea { min-height: 40vh; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92rem !important; line-height: 1.55; width: 100%; }
 
 /* Template Dropdown */
-.template-bar { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 8px; }
+.template-bar { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-top: 8px; margin-bottom: 8px; }
 .template-btn {
   background: var(--bg-app); border: 1px solid var(--border-line); border-radius: 8px;
   padding: 6px 12px; font-size: 0.82rem; white-space: nowrap; cursor: pointer; color: var(--text-main);
 }
 .template-btn:active { background: var(--lime); color: #292724; }
+
+.format-bar { display: flex; gap: 4px; margin-bottom: 8px; padding: 4px; background: var(--bg-paper); border: 1px solid var(--border-line); border-radius: 10px; }
+.format-bar button { background: transparent; border: none; padding: 8px 12px; font-size: 0.95rem; cursor: pointer; border-radius: 6px; color: var(--text-main); }
+.format-bar button:active { background: var(--lime); color: #292724; }
+.body-textarea { min-height: 40vh; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92rem !important; line-height: 1.55; width: 100%; }
 
 /* Checklist */
 .checklist-grid { display: flex; flex-direction: column; gap: 10px; background: var(--bg-paper); padding: 16px; border-radius: 12px; border: 1px solid var(--border-line); }
