@@ -1,4 +1,4 @@
-const CACHE = 'galochka-v10';
+const CACHE = 'galochka-v11';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', (e) => {
