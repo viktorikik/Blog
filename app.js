@@ -125,21 +125,33 @@ function setupSwipe(wrapper, onDelete) {
   const content = wrapper.querySelector('.swipe-content');
   let startX = 0, startY = 0, currentX = 0;
   let isSwiping = false, isScrolling = false, isOpen = false;
+  let justSwiped = false; // Флаг для блокировки клика после свайпа
 
   content.addEventListener('click', (e) => {
     if (isOpen) {
-      e.preventDefault(); e.stopPropagation();
-      content.style.transition = 'transform 0.2s'; content.style.transform = 'translateX(0px)'; isOpen = false;
-    } else if (isSwiping) {
-      e.preventDefault(); e.stopPropagation();
+      e.preventDefault(); 
+      e.stopPropagation();
+      content.style.transition = 'transform 0.2s'; 
+      content.style.transform = 'translateX(0px)'; 
+      isOpen = false;
+      justSwiped = true; 
+      setTimeout(() => { justSwiped = false; }, 100);
+    } else if (justSwiped) {
+      e.preventDefault(); 
+      e.stopPropagation();
+      justSwiped = false;
     }
   });
 
   content.addEventListener('touchstart', e => {
     if (isOpen) return; 
-    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    startX = e.touches[0].clientX; 
+    startY = e.touches[0].clientY;
     currentX = startX;
-    isSwiping = false; isScrolling = false; content.style.transition = 'none';
+    isSwiping = false; 
+    isScrolling = false; 
+    justSwiped = false;
+    content.style.transition = 'none';
   }, {passive: true});
 
   content.addEventListener('touchmove', e => {
@@ -150,16 +162,19 @@ function setupSwipe(wrapper, onDelete) {
     let diffY = currentY - startY;
 
     if (!isSwiping) {
-      if (Math.abs(diffX) > 20 && Math.abs(diffX) > Math.abs(diffY) * 1.5) { 
+      // Если сдвиг по вертикали больше, чем по горизонтали, это скролл
+      if (Math.abs(diffY) > Math.abs(diffX)) {
+        isScrolling = true;
+        return;
+      }
+      // Если сдвинули влево больше чем на 15px — это свайп
+      if (diffX < -15) { 
         isSwiping = true; 
-      } else if (Math.abs(diffY) > 15) { 
-        isScrolling = true; 
-        return; 
       }
     }
     
-    if (isSwiping && diffX < 0) {
-      e.preventDefault();
+    if (isSwiping) {
+      e.preventDefault(); // Блокируем скролл и выделение
       content.style.transform = `translateX(${Math.max(-80, diffX)}px)`;
     }
   }, {passive: false});
@@ -175,7 +190,8 @@ function setupSwipe(wrapper, onDelete) {
       } else { 
         content.style.transform = 'translateX(0px)'; 
       }
-      e.preventDefault();
+      justSwiped = true; 
+      setTimeout(() => { justSwiped = false; }, 100);
     }
     setTimeout(() => { isSwiping = false; }, 50);
   });
@@ -183,12 +199,16 @@ function setupSwipe(wrapper, onDelete) {
   content.addEventListener('touchcancel', () => {
     isSwiping = false;
     isScrolling = false;
+    justSwiped = false;
     content.style.transition = 'transform 0.2s';
     if (!isOpen) content.style.transform = 'translateX(0px)';
   });
 
-  wrapper.querySelector('.swipe-delete').addEventListener('click', () => {
-    content.style.transform = 'translateX(0px)'; isOpen = false; onDelete();
+  wrapper.querySelector('.swipe-delete').addEventListener('click', (e) => {
+    e.stopPropagation();
+    content.style.transform = 'translateX(0px)'; 
+    isOpen = false; 
+    onDelete();
   });
 }
 
