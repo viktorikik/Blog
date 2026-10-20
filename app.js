@@ -150,7 +150,6 @@ function setupSwipe(wrapper, onDelete) {
     let diffY = currentY - startY;
 
     if (!isSwiping) {
-      // Порог 20px и проверка, что движение по горизонтали явно преобладает
       if (Math.abs(diffX) > 20 && Math.abs(diffX) > Math.abs(diffY) * 1.5) { 
         isSwiping = true; 
       } else if (Math.abs(diffY) > 15) { 
@@ -448,7 +447,8 @@ async function renderPlan() {
   }
   
   const all = await dbGetAll(db, 'posts');
-  let plans = all.filter(p => p.publishDate && matchesFilter(p));
+  // Показываем посты с датой, кроме опубликованных
+  let plans = all.filter(p => p.publishDate && p.status !== 'published' && matchesFilter(p));
   const t = today();
   plans.sort((a, b) => {
     const aPast = a.publishDate < t, bPast = b.publishDate < t;
@@ -469,7 +469,8 @@ async function renderPlan() {
 // ============ Calendar Render ============
 async function renderCalendar() {
   const all = await dbGetAll(db, 'posts');
-  const plans = all.filter(p => p.publishDate);
+  // В календаре тоже не показываем опубликованные
+  const plans = all.filter(p => p.publishDate && p.status !== 'published');
   
   const year = currentCalendarDate.getFullYear();
   const month = currentCalendarDate.getMonth();
