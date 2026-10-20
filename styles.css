@@ -6,7 +6,7 @@
   --sage: #7E9E70;
   --sage-light: #B4D2A8;
   --paper: #fffaf1;
-  --muted: #5f5a51; /* Сделали чуть темнее для читаемости */
+  --muted: #5f5a51;
   --line: #dfd4c4;
   
   --bg-app: var(--cream);
@@ -85,7 +85,7 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .search-input {
   width: 100%; padding: 10px 14px; border: 1px solid var(--border-line);
   border-radius: 10px; background: var(--bg-paper); font-size: 0.95rem; color: var(--text-main);
-  -webkit-text-fill-color: var(--text-main); /* Исправление для iOS */
+  -webkit-text-fill-color: var(--text-main);
 }
 .filter-chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
 .filter-chip {
@@ -115,6 +115,7 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+  background: var(--bg-paper); /* Чтобы при сдвиге не было прозрачности */
 }
 .card { 
   background: var(--bg-paper); border: 1px solid var(--border-line); 
@@ -136,11 +137,10 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .channel-pill, .status-pill {
   display: inline-block; padding: 3px 10px; border-radius: 999px;
   font-size: 0.78rem; font-weight: 700; color: #292724;
-  /* Добавляем легкую тень, чтобы текст читался на любом фоне */
   text-shadow: 0 1px 1px rgba(255,255,255,0.2); 
 }
 
-/* Фикс невидимого текста на темных плашках каналов (например, MAX) */
+/* Фикс невидимого текста на темных плашках каналов */
 .channel-pill[style*="#000"], 
 .channel-pill[style*="black"], 
 .channel-pill[style*="rgb(0, 0, 0)"], 
@@ -230,7 +230,7 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .modal input[type="date"] {
   width: 100%; padding: 12px; border: 1px solid var(--border-line); border-radius: 10px;
   background: var(--bg-paper); font: inherit; color: var(--text-main);
-  -webkit-text-fill-color: var(--text-main); /* Принудительный цвет текста для iOS */
+  -webkit-text-fill-color: var(--text-main);
 }
 
 .modal input[type="date"] {
@@ -239,7 +239,6 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 
 .modal input:focus, .modal select:focus, .modal textarea:focus { outline: 2px solid var(--lime); outline-offset: -1px; }
 
-/* ИСПРАВЛЕНИЕ ЦВЕТА ПЛЕЙСХОЛДЕРОВ (подсказок) */
 ::placeholder { 
   color: var(--muted); 
   opacity: 1; 
@@ -303,7 +302,6 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   border-radius: 999px; padding: 6px 14px; font-size: 0.85rem;
   font-weight: 600; cursor: pointer; color: var(--text-main);
 }
-/* Защита от невидимого текста в активных кнопках каналов */
 .channel-toggle.active { 
   border-color: #292724; 
   background: var(--toggle-color, var(--lime)); 
