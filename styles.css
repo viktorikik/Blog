@@ -6,7 +6,7 @@
   --sage: #7E9E70;
   --sage-light: #B4D2A8;
   --paper: #fffaf1;
-  --muted: #756f65;
+  --muted: #5f5a51; /* Сделали чуть темнее для читаемости */
   --line: #dfd4c4;
   
   --bg-app: var(--cream);
@@ -85,6 +85,7 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .search-input {
   width: 100%; padding: 10px 14px; border: 1px solid var(--border-line);
   border-radius: 10px; background: var(--bg-paper); font-size: 0.95rem; color: var(--text-main);
+  -webkit-text-fill-color: var(--text-main); /* Исправление для iOS */
 }
 .filter-chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
 .filter-chip {
@@ -111,9 +112,9 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   transition: transform 0.2s ease-out, background-color 0.1s;
   touch-action: pan-y;
   will-change: transform;
-  -webkit-user-select: none; /* Запрет выделения текста */
+  -webkit-user-select: none;
   user-select: none;
-  -webkit-touch-callout: none; /* Запрет контекстного меню iOS */
+  -webkit-touch-callout: none;
 }
 .card { 
   background: var(--bg-paper); border: 1px solid var(--border-line); 
@@ -135,8 +136,20 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .channel-pill, .status-pill {
   display: inline-block; padding: 3px 10px; border-radius: 999px;
   font-size: 0.78rem; font-weight: 700; color: #292724;
+  /* Добавляем легкую тень, чтобы текст читался на любом фоне */
+  text-shadow: 0 1px 1px rgba(255,255,255,0.2); 
 }
-.status-pill { background: var(--lime); }
+
+/* Фикс невидимого текста на темных плашках каналов (например, MAX) */
+.channel-pill[style*="#000"], 
+.channel-pill[style*="black"], 
+.channel-pill[style*="rgb(0, 0, 0)"], 
+.channel-pill[style*="#292724"] {
+  color: #ffffff !important;
+  text-shadow: none;
+}
+
+.status-pill { background: var(--lime); color: #292724; text-shadow: none; }
 .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
 .tag { background: var(--bg-app); border: 1px solid var(--border-line); border-radius: 999px; padding: 2px 8px; font-size: 0.78rem; color: var(--muted); }
 .card-series { font-size: 0.82rem; color: var(--sage); font-weight: 600; margin: 4px 0; }
@@ -208,17 +221,31 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .editor-view.hidden, .preview-view.hidden { display: none; }
 
 .label { display: block; font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 16px 0 6px; }
-.modal input[type="text"], .modal input[type="number"], .modal select, .modal textarea {
+
+/* ИСПРАВЛЕНИЕ ПОЛЕЙ ВВОДА ДЛЯ SAFARI */
+.modal input[type="text"], 
+.modal input[type="number"], 
+.modal select, 
+.modal textarea,
+.modal input[type="date"] {
   width: 100%; padding: 12px; border: 1px solid var(--border-line); border-radius: 10px;
   background: var(--bg-paper); font: inherit; color: var(--text-main);
+  -webkit-text-fill-color: var(--text-main); /* Принудительный цвет текста для iOS */
 }
-/* Компактная дата для Safari */
+
 .modal input[type="date"] {
-  width: 100%; padding: 10px 12px; border: 1px solid var(--border-line); border-radius: 10px;
-  background: var(--bg-paper); font: inherit; color: var(--text-main);
   height: 44px; -webkit-appearance: none; appearance: none;
 }
+
 .modal input:focus, .modal select:focus, .modal textarea:focus { outline: 2px solid var(--lime); outline-offset: -1px; }
+
+/* ИСПРАВЛЕНИЕ ЦВЕТА ПЛЕЙСХОЛДЕРОВ (подсказок) */
+::placeholder { 
+  color: var(--muted); 
+  opacity: 1; 
+  -webkit-text-fill-color: var(--muted); 
+}
+
 .small-textarea { min-height: 100px; resize: vertical; }
 
 /* Editor tabs */
@@ -276,7 +303,17 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   border-radius: 999px; padding: 6px 14px; font-size: 0.85rem;
   font-weight: 600; cursor: pointer; color: var(--text-main);
 }
-.channel-toggle.active { border-color: #292724; background: var(--toggle-color, var(--lime)); color: #292724; }
+/* Защита от невидимого текста в активных кнопках каналов */
+.channel-toggle.active { 
+  border-color: #292724; 
+  background: var(--toggle-color, var(--lime)); 
+  color: #292724; 
+}
+.channel-toggle.active[style*="#000"], 
+.channel-toggle.active[style*="black"], 
+.channel-toggle.active[style*="rgb(0, 0, 0)"] {
+  color: #ffffff !important;
+}
 
 /* Meta tab: series */
 .series-row { display: flex; gap: 8px; flex-wrap: wrap; }
